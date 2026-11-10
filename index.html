@@ -54,13 +54,24 @@
   </head>
   <body>
     <script src="boot-guard.js"></script>
+    <script>document.title = "B:guard-ran";</script>
     <!-- Tizen fast path: deferred scripts keep document order but no longer
          parser-block first paint / focus-engine init on single-core TVs. -->
     <script
       defer
       src="core-js.bundle.js"
+      onload="document.title = 'B:corejs-ran';"
       onerror="window.NuvioBootGuard && window.NuvioBootGuard.scriptFailed(this.src)"
     ></script>
+    <!-- Chromium 47 (Tizen 3.0) polyfills: each one self-detects native
+         support and no-ops on modern browsers. legacy-css-vars.js must run
+         after css-vars-ponyfill (it calls window.cssVars). -->
+    <script defer src="assets/libs/abortcontroller-polyfill.js" onload="document.title = 'B:polyfill-abort-ran';"></script>
+    <script defer src="assets/libs/url-search-params-polyfill.js"></script>
+    <script defer src="assets/libs/intersection-observer.js"></script>
+    <script defer src="assets/libs/resize-observer-polyfill.js"></script>
+    <script defer src="assets/libs/css-vars-ponyfill.min.js" onload="document.title = 'B:ponyfill-ran';"></script>
+    <script defer src="assets/runtime/legacy-css-vars.js" onload="document.title = 'B:cssvars-loader-ran';"></script>
     <script defer src="nuvio.env.js"></script>
 
     <script defer src="assets/libs/qrcode-generator.js"></script>
@@ -68,6 +79,7 @@
     <script
       defer
       src="app.bundle.js?v=20260531supporters2"
+      onload="document.title = 'B:appbundle-ran';"
       onerror="window.NuvioBootGuard && window.NuvioBootGuard.scriptFailed(this.src)"
     ></script>
   </body>

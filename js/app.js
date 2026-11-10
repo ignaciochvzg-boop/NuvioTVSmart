@@ -102,6 +102,19 @@ function markBootStage(stage) {
   if (guard && typeof guard.stage === "function") {
     guard.stage(stage);
   }
+  // Tizen port diagnostics: document.title is readable over HTTP through the
+  // Web Inspector /json listing even while the renderer's main thread is
+  // frozen, so it doubles as an out-of-band boot progress meter.
+  try {
+    console.log("[B] " + stage);
+    document.title = "B:" + stage;
+    // Persistent boot log: readable over CDP after the fact, so the whole
+    // timeline (with millisecond offsets) survives title overwrites.
+    const marks = window.__B_MARKS__ || (window.__B_MARKS__ = []);
+    marks.push({ t: Math.round(window.performance.now()), s: stage });
+  } catch (_) {
+    // Diagnostics must never change the application flow.
+  }
 }
 
 function loginTrace(event, data) {

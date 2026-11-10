@@ -3,6 +3,25 @@
 
   var root = document.documentElement;
 
+  // Node.isConnected arrived in Chrome 51; Tizen 3.0 (Chromium 47) does not
+  // have it. Without it every truthiness check reads `undefined`, so the Home
+  // lazy-image sweep treats all rows as detached and never loads a poster.
+  if (!("isConnected" in Node.prototype)) {
+    Object.defineProperty(Node.prototype, "isConnected", {
+      configurable: true,
+      get: function () {
+        return this === document || this === root || root.contains(this);
+      }
+    });
+  }
+
+  // NOTE: a queueMicrotask polyfill was tried here and REVERTED: with a pure
+  // microtask shim, a boot-time scheduler that dies with
+  // "ReferenceError: queueMicrotask is not defined" on stock Chromium 47
+  // instead starts a self-repeating microtask loop that starves the event
+  // loop (title freezes, Web Inspector stops responding). That error is
+  // non-critical: boot and UI complete without it.
+
   function removeClass(name) {
     root.className = (" " + root.className + " ")
       .replace(new RegExp(" " + name + " ", "g"), " ")

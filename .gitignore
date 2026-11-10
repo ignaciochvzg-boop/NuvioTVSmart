@@ -17,3 +17,7 @@ app.bundle.js
 ecosystem.config.cjs
 scripts/commit-build-poller.mjs
 .DS_Store
+
+# Tizen port: local probes and Python bytecode
+_*
+__pycache__/

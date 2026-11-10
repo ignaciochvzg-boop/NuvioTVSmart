@@ -11,6 +11,7 @@ import { readAppMetadata, syncVersionFiles } from "./appMetadata.mjs";
 import { compatibilityPolicy } from "./compatibilityPolicy.mjs";
 import { writeRuntimeEnvScriptFile } from "./envProperties.mjs";
 import { buildI18nBundles } from "./buildI18nBundles.mjs";
+import { babelLegacyPass, verifyLegacySyntax } from "./babelLegacyPass.mjs";
 import { assSubtitleRuntimeSource } from "./assSubtitleRuntime.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -31,6 +32,19 @@ const rgbVariableFallbacks = {
   "--card-bg-rgb": "34 34 34",
   "--secondary-color-rgb": "245 245 245",
   "--focus-color-rgb": "255 255 255"
+};
+// Two-stage legacy transpilation for Chromium 47 (Tizen 3.0):
+//   1. esbuild here at chrome56 (its known-good floor: it refuses to lower
+//      const/let/destructuring below chrome51 at all), with a "use strict"
+//      banner because Chromium 47 only runs let/const/class in strict mode.
+//   2. a Babel @babel/preset-env pass over the emitted bundles targeting
+//      chrome 47 (see below), which lowers what47 cannot parse: destructuring
+//      and default parameters (49), async/await (55).
+// Runtime APIs are polyfilled for 47 through core-js, which reads
+// compatibilityPolicy.chromiumVersion directly.
+const legacyScriptTarget = {
+  target: [`chrome${Math.max(compatibilityPolicy.chromiumVersion, 56)}`],
+  banner: { js: '"use strict";' }
 };
 
 function splitTopLevelSpaces(value) {
@@ -535,7 +549,7 @@ async function buildCoreJsBundle() {
     bundle: true,
     format: "iife",
     minify: !debugBundle,
-    target: [`chrome${compatibilityPolicy.chromiumVersion}`],
+    ...legacyScriptTarget,
     legalComments: "none"
   });
 }
@@ -551,7 +565,7 @@ async function buildAssSubtitleLibrary() {
     format: "iife",
     outfile: path.join(distDir, "assets", "libs", "ass.min.js"),
     minify: !debugBundle,
-    target: [`chrome${compatibilityPolicy.chromiumVersion}`],
+    ...legacyScriptTarget,
     legalComments: "none"
   });
 }
@@ -570,7 +584,7 @@ async function buildPluginRuntimeAssets() {
     ],
     outfile: path.join(distDir, "assets", "libs", "quickjs-emscripten.global.js"),
     bundle: false,
-    target: [`chrome${compatibilityPolicy.chromiumVersion}`],
+    ...legacyScriptTarget,
     minify: !debugBundle,
     legalComments: "none"
   });
@@ -580,7 +594,7 @@ async function buildPluginRuntimeAssets() {
     bundle: true,
     platform: "browser",
     format: "iife",
-    target: [`chrome${compatibilityPolicy.chromiumVersion}`],
+    ...legacyScriptTarget,
     minify: !debugBundle,
     legalComments: "none",
     define: {
@@ -597,8 +611,57 @@ async function buildPluginRuntimeAssets() {
   );
 }
 
+// Browser polyfills for Chromium 47 (Tizen 3.0) shipped from node_modules,
+// mirroring how hls.js/dash.js are copied. All of them self-detect native
+// support and no-op on modern browsers.
+async function copyLegacyPolyfills() {
+  console.log("copying legacy polyfills...");
+  const libsDir = path.join(distDir, "assets", "libs");
+  const nodeModules = path.join(rootDir, "node_modules");
+  const polyfills = [
+    ["css-vars-ponyfill/dist/css-vars-ponyfill.min.js", "css-vars-ponyfill.min.js"],
+    ["abortcontroller-polyfill/dist/umd-polyfill.js", "abortcontroller-polyfill.js"],
+    ["intersection-observer/intersection-observer.js", "intersection-observer.js"],
+    [
+      "resize-observer-polyfill/dist/ResizeObserver.global.js",
+      "resize-observer-polyfill.js"
+    ],
+    ["url-search-params-polyfill/index.js", "url-search-params-polyfill.js"]
+  ];
+  await Promise.all(
+    polyfills.map(([source, target]) =>
+      cp(path.join(nodeModules, source), path.join(libsDir, target))
+    )
+  );
+}
+
 async function buildBundle() {
   const { version } = await readAppMetadata();
+
+  // Chrome 47 boot markers (see scripts/splitLegacyBundle.mjs): every module
+  // body starts with a title marker gated behind window.__NUVIO_BOOT_TRACE__
+  // (set by the Tizen index.html). The splitter uses the marker strings as
+  // module boundaries; at runtime they cost one property check per module
+  // unless tracing is on, in which case document.title becomes a boot
+  // progress meter readable over HTTP through the Web Inspector /json
+  // listing even while the renderer's main thread is busy.
+  const bootMarkerPlugin = {
+    name: "nuvio-boot-markers",
+    setup(pluginBuild) {
+      pluginBuild.onLoad({ filter: /\.js$/ }, async (args) => {
+        const contents = await readFile(args.path, "utf8");
+        const relative = path.relative(rootDir, args.path).split(path.sep).join("/");
+        const marker =
+          `;if(window.__NUVIO_BOOT_TRACE__){try{document.title=${JSON.stringify(`B:mod:${relative}`)};}catch(_){}}\n`;
+        if (contents.startsWith("#!")) {
+          const newline = contents.indexOf("\n");
+          const cut = newline === -1 ? contents.length : newline + 1;
+          return { contents: contents.slice(0, cut) + marker + contents.slice(cut), loader: "js" };
+        }
+        return { contents: marker + contents, loader: "js" };
+      });
+    }
+  };
 
   console.log("starting bundle build...");
   const result = await build({
@@ -608,7 +671,12 @@ async function buildBundle() {
     minify: !debugBundle,
     format: "iife",
     sourcemap: debugBundle,
-    target: [`chrome${compatibilityPolicy.chromiumVersion}`],
+    ...legacyScriptTarget,
+    banner: {
+      js: '"use strict";\ntry{document.title="B:appbundle-exec-begin";}catch(_){}'
+    },
+    footer: { js: 'try{document.title="B:appbundle-exec-done";}catch(_){}' },
+    plugins: [bootMarkerPlugin],
     metafile: true,
     define: {
       "process.env.NODE_ENV": '"production"',
@@ -674,6 +742,7 @@ async function runBuild() {
       path.join(rootDir, "node_modules", "libbitsub", "LICENSE"),
       path.join(distDir, "assets", "libs", "libbitsub.LICENSE")
     );
+    await copyLegacyPolyfills();
 
     if (!copiedAppInfoSource) {
       console.warn("WARNING: skipping appinfo.json because it is not present in the repo root.");
@@ -681,6 +750,11 @@ async function runBuild() {
 
     // js bundle processing (final step to ensure all transformations are applied correctly and we end up with a single, minified bundle file)
     await buildBundle();
+
+    // Chrome 47 (Tizen 3.0) stage: esbuild stops at chrome56, so lower the
+    // remaining syntax with Babel and verify nothing modern survives.
+    await babelLegacyPass({ distDir });
+    await verifyLegacySyntax({ distDir });
 
     const sourceIndex = await readFile(path.join(rootDir, "index.html"), "utf8");
     // The build ships a single concatenated stylesheet. Rewrite any legacy

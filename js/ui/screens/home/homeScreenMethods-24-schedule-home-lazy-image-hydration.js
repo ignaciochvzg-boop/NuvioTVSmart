@@ -8,6 +8,19 @@ import {
   isRescalableArtworkFit
 } from "../../images/tvPosterRescaler.js";
 
+// Temporary lazy-hydration diagnostics. Enabled at runtime from the Web
+// Inspector with window.__NUVIO_DEBUG_LAZY__ = true (checked at call time so
+// it can be toggled without a rebuild); disabled by default.
+function lazyTrace(event, data) {
+  try {
+    if (globalThis.__NUVIO_DEBUG_LAZY__ === true) {
+      console.log("[lazy] " + event + " " + JSON.stringify(data || {}));
+    }
+  } catch (_) {
+    // Diagnostics must never change hydration behavior.
+  }
+}
+
 export function createHomeScreenMethods24() {
   const imageRequests = new WeakMap();
   const {
@@ -47,8 +60,17 @@ export function createHomeScreenMethods24() {
       // has no row, so this pass used to walk the whole image index and hydrate
       // the visible rows while the viewer was navigating the menu.
       if (typeof this.isSidebarFocusActive === "function" && this.isSidebarFocusActive()) {
+        lazyTrace("schedule:skip-sidebar", {});
         return;
       }
+      lazyTrace("schedule", {
+        anchor: anchorNode instanceof HTMLElement ? String(anchorNode.tagName).slice(0, 20) : "null",
+        defer: Boolean(deferUntilVerticalSettle),
+        focusedRowOnly: Boolean(focusedRowOnly),
+        neighbors: Boolean(includeNeighborRows),
+        viewportChanged: Boolean(viewportChanged),
+        refreshIndex: Boolean(refreshIndex)
+      });
       const anchorRow = anchorNode instanceof HTMLElement ? anchorNode.closest(HOME_LAZY_IMAGE_ROW_SELECTOR) : null;
       const anchorImagePending = Boolean(
         anchorNode?.querySelector?.(".content-poster[data-src], .home-poster-landscape-logo[data-src], .home-continue-bg[data-src]")
@@ -80,6 +102,7 @@ export function createHomeScreenMethods24() {
         // viewport, or focused image changes. Smart-TV bounded hydration may
         // leave a later horizontal target pending, so that target is allowed to
         // request a second pass.
+        lazyTrace("schedule:skip-same-anchor", {});
         return;
       }
       if (anchorNode instanceof HTMLElement) {
@@ -113,11 +136,14 @@ export function createHomeScreenMethods24() {
         const retryAfterVerticalSettle = () => {
           this.homeLazyImageHydrationSettleTimer = null;
           if (this.isModernVerticalScrollActive()) {
+            lazyTrace("settle:still-scrolling", {});
             this.homeLazyImageHydrationSettleTimer = setTimeout(retryAfterVerticalSettle, MODERN_HOME_CONSTANTS.verticalScrollSettlePollMs);
             return;
           }
+          lazyTrace("settle:retry", {});
           this.scheduleHomeLazyImageHydration(target, { refreshIndex });
         };
+        lazyTrace("schedule:defer-settle", { delayMs: hydrationDelayMs });
         this.homeLazyImageHydrationSettleTimer = setTimeout(retryAfterVerticalSettle, hydrationDelayMs);
         return;
       }
@@ -126,13 +152,16 @@ export function createHomeScreenMethods24() {
         this.homeLazyImageHydrationSettleTimer = null;
       }
       if (this.modernVerticalFastScrollState) {
+        lazyTrace("schedule:skip-fast-scroll", {});
         return;
       }
       if (this.homeLazyImageHydrationRaf) {
+        lazyTrace("schedule:skip-raf-pending", {});
         return;
       }
       this.homeLazyImageHydrationRaf = requestAnimationFrame(() => {
         this.homeLazyImageHydrationRaf = 0;
+        lazyTrace("schedule:raf-fire", {});
         const anchor = this.pendingHomeLazyImageAnchor || this.getCurrentFocusedNode();
         this.pendingHomeLazyImageAnchor = null;
         const forceFullScan = Boolean(this.homeLazyImageHydrationNeedsFullScan);
@@ -168,6 +197,10 @@ export function createHomeScreenMethods24() {
       });
       const index = Array.from(imagesByRow, ([row, images]) => ({ row, images }));
       this.homeLazyImageHydrationIndex = index;
+      lazyTrace("index:built", {
+        rows: index.length,
+        images: index.reduce((total, entry) => total + entry.images.length, 0)
+      });
       return index;
     },
     hydrateHomeLazyImages(
@@ -179,7 +212,15 @@ export function createHomeScreenMethods24() {
       }
       // A frame may already be queued when the sidebar takes focus. Drop it
       // here as well, so the menu does not inherit the Home hydration burst.
+      lazyTrace("hydrate", {
+        anchor: anchorNode instanceof HTMLElement ? String(anchorNode.tagName).slice(0, 20) : "null",
+        forceFullScan: Boolean(forceFullScan),
+        refreshIndex: Boolean(refreshIndex),
+        focusedRowOnly: Boolean(focusedRowOnly),
+        neighbors: Boolean(includeNeighborRows)
+      });
       if (typeof this.isSidebarFocusActive === "function" && this.isSidebarFocusActive()) {
+        lazyTrace("hydrate:skip-sidebar", {});
         return;
       }
       const anchorRow = anchorNode?.closest?.(HOME_LAZY_IMAGE_ROW_SELECTOR) || null;
@@ -190,6 +231,7 @@ export function createHomeScreenMethods24() {
         // subsequent horizontal moves, the viewport geometry for every other row
         // is unchanged, so rescanning and measuring all distant lazy images only
         // repeats work on the D-pad hot path.
+        lazyTrace("hydrate:skip-same-row", {});
         return;
       }
       this.lastHomeLazyImageHydrationAnchorRow = anchorRow;
@@ -197,7 +239,9 @@ export function createHomeScreenMethods24() {
         refreshIndex || !Array.isArray(this.homeLazyImageHydrationIndex)
           ? this.buildHomeLazyImageHydrationIndex()
           : this.homeLazyImageHydrationIndex;
+      lazyTrace("hydrate:index", { rows: imageRows.length, refresh: Boolean(refreshIndex) });
       if (!imageRows.length) {
+        lazyTrace("hydrate:skip-empty-index", {});
         return;
       }
       const viewport =
@@ -292,6 +336,7 @@ export function createHomeScreenMethods24() {
         });
       });
       // Complete geometry reads before changing image layout/loading state.
+      lazyTrace("hydrate:pending", { count: pendingLoads.length, legacy: Boolean(this.isLegacyTvRuntime()) });
       if (this.isLegacyTvRuntime()) {
         this.commitHomeLazyImageSources(pendingLoads, anchorNode, anchorRow);
       } else {
@@ -308,6 +353,7 @@ export function createHomeScreenMethods24() {
       }
     },
     assignHomeLazyImageSource(image, src, priority = 2) {
+      lazyTrace("assign", { priority: Number(priority) || 0, src: String(src).slice(0, 70) });
       // The app already decided this image is close enough to load, so stop
       // deferring to the browser's own lazy heuristic.
       image.loading = "eager";
@@ -443,6 +489,7 @@ export function createHomeScreenMethods24() {
       return released;
     },
     commitHomeLazyImageSources(queued = [], anchorNode = null, anchorRow = null) {
+      lazyTrace("commit", { queued: queued.length });
       const pending = this.homeLazyImageCommitQueue || (this.homeLazyImageCommitQueue = []);
       const nextOrder = () => {
         this.homeLazyImageCommitOrder = Number(this.homeLazyImageCommitOrder || 0) + 1;
@@ -491,6 +538,7 @@ export function createHomeScreenMethods24() {
           this.assignHomeLazyImageSource(image, currentSrc || src, priority);
           assigned += 1;
         }
+        lazyTrace("commit:drain", { assigned: assigned, left: pending.length });
         if (pending.length) {
           this.homeLazyImageCommitRaf = requestAnimationFrame(drain);
         }

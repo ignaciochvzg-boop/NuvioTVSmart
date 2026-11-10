@@ -30,6 +30,9 @@
     "sync:webos": "node ./scripts/sync-wrapper.mjs --webos"
   },
   "devDependencies": {
+    "@babel/core": "^8.1.0",
+    "@babel/parser": "^8.1.0",
+    "@babel/preset-env": "^8.0.7",
     "@csstools/postcss-global-data": "^4.0.0",
     "@eslint/js": "^9.39.4",
     "@webos-tools/cli": "^3.2.6",
@@ -49,13 +52,18 @@
     "flatted": "3.4.2"
   },
   "dependencies": {
+    "abortcontroller-polyfill": "^1.7.8",
     "assjs": "0.1.10",
     "cheerio": "^1.2.0",
     "crypto-js": "^4.2.0",
+    "css-vars-ponyfill": "^2.4.9",
     "dashjs": "5.2.1",
     "hls.js": "1.7.3",
+    "intersection-observer": "^0.12.2",
     "jszip": "^3.10.2",
     "libbitsub": "^1.12.1",
-    "quickjs-emscripten": "^0.32.0"
+    "quickjs-emscripten": "^0.32.0",
+    "resize-observer-polyfill": "^1.5.1",
+    "url-search-params-polyfill": "^8.2.5"
   }
 }

@@ -46,7 +46,7 @@ export function createPlayerControllerMethods13() {
         maxBufferLength: HLS_MAX_BUFFER_SECONDS,
         maxMaxBufferLength: HLS_MAX_BUFFER_SECONDS,
         maxBufferHole: 0.5,
-        startFragPrefetch: false,
+        startFragPrefetch: true,
         // Android PlayerLoadErrorHandlingPolicy (DefaultLoadErrorHandlingPolicy(6)) keeps
         // retrying playlist 5xx for ~15s while buffered media plays. hls.js shares one
         // playlist error counter across video and audio playlists, hence 12 retries.

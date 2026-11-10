@@ -8,6 +8,7 @@ import { readAppMetadata, syncVersionFiles } from "./appMetadata.mjs";
 import { compatibilityPolicy } from "./compatibilityPolicy.mjs";
 import { writeRuntimeEnvScriptFile } from "./envProperties.mjs";
 import { pruneCssFileForPlatform } from "./pruneCssForPlatform.mjs";
+import { splitLegacyBundle } from "./splitLegacyBundle.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
@@ -176,31 +177,50 @@ function buildIndexHtml({ includeEngineFsService = false, includePluginService =
   <meta name="viewport" content="width=1920, height=1080, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <title>${appName}</title>
+  <script>window.__NUVIO_BOOT_TRACE__ = true;</script>
   <script src="$WEBAPIS/webapis/webapis.js"></script>
   <script src="assets/runtime/legacy-features.js"></script>
+  <script>document.title = "B:head-scripts-done";</script>
 ${pluginServiceBridge}  <link rel="stylesheet" href="css/bundle.css" />
 </head>
 <body>
   <script src="boot-guard.js"></script>
+  <script>document.title = "B:guard-ran";</script>
   <script src="core-js.bundle.js" onerror="window.NuvioBootGuard &amp;&amp; window.NuvioBootGuard.scriptFailed(this.src)"></script>
+  <script>document.title = "B:corejs-ran";</script>
+  <!-- Chromium 47 (Tizen 3.0) polyfills: each self-detects native support
+       and no-ops on modern browsers. legacy-css-vars.js must run after
+       css-vars-ponyfill (it calls window.cssVars). -->
+  <script src="assets/libs/abortcontroller-polyfill.js"></script>
+  <script src="assets/libs/url-search-params-polyfill.js"></script>
+  <script src="assets/libs/intersection-observer.js"></script>
+  <script src="assets/libs/resize-observer-polyfill.js"></script>
+  <script src="assets/libs/css-vars-ponyfill.min.js"></script>
+  <script>document.title = "B:polyfills-ran";</script>
+  <script src="assets/runtime/legacy-css-vars.js" onerror="window.NuvioBootGuard &amp;&amp; window.NuvioBootGuard.scriptFailed(this.src)"></script>
+  <script>document.title = "B:cssvars-loader-ran";</script>
   <script defer src="main.js" onerror="window.NuvioBootGuard &amp;&amp; window.NuvioBootGuard.scriptFailed(this.src)"></script>
 </body>
 </html>
 `;
 }
 
-function buildMainJs({ packageId, includeEngineFsService, includePluginService }) {
+function buildMainJs({ packageId, includeEngineFsService, includePluginService, bundleChunks }) {
   const engineFsServiceId = `${packageId}.EngineFsService`;
   const pluginServiceId = `${packageId}.PluginService`;
   const configuredServiceId = includeEngineFsService ? engineFsServiceId : "";
   const configuredPluginServiceId = includePluginService ? pluginServiceId : "";
+  const chunkScriptCalls = (bundleChunks && bundleChunks.length ? bundleChunks : ["app.bundle.js"])
+    .map((chunkName) => `  loadScript(${JSON.stringify(chunkName)});`)
+    .join("\n");
   const compatibilityOptions = JSON.stringify({
     platform: "tizen",
     minVersion: Number.parseInt(compatibilityPolicy.tizenRequiredVersion, 10),
     minChrome: compatibilityPolicy.chromiumVersion,
     requiredLabel: `Samsung Tizen ${compatibilityPolicy.tizenRequiredVersion}+ · Chromium ${compatibilityPolicy.chromiumVersion}+ (${compatibilityPolicy.tizenSupportYear}+)`
   });
-  return `window.__NUVIO_PLATFORM__ = "tizen";
+  return `document.title = "B:mainjs-begin";
+window.__NUVIO_PLATFORM__ = "tizen";
 window.__NUVIO_TIZEN_ENGINEFS_SERVICE_ENABLED__ = ${includeEngineFsService};
 window.__NUVIO_TIZEN_ENGINEFS_SERVICE_ID__ = ${JSON.stringify(configuredServiceId)};
 window.__NUVIO_TIZEN_PLUGIN_SERVICE_ENABLED__ = ${includePluginService};
@@ -232,10 +252,15 @@ function loadScript(src) {
   script.src = src;
   script.defer = false;
   script.onerror = function handleStartupScriptError() {
+    document.title = "B:ERROR:load:" + src.split("/").pop();
     if (window.NuvioBootGuard) {
       window.NuvioBootGuard.scriptFailed(src);
     }
   };
+  script.onload = function handleStartupScriptLoaded() {
+    document.title = "B:ran:" + src.split("/").pop();
+  };
+  document.title = "B:load:" + src.split("/").pop();
   if (window.NuvioBootGuard) {
     window.NuvioBootGuard.stage("Loading " + src);
   }
@@ -245,7 +270,10 @@ function loadScript(src) {
 function startNuvioApp() {
   loadScript("nuvio.env.js");
   loadScript("assets/libs/qrcode-generator.js");
-  loadScript("app.bundle.js");
+  // The Chrome 47 bundle ships as several ordered classic scripts (see
+  // splitLegacyBundle.mjs); async=false makes the browser execute them in
+  // insertion order, exactly like the single file did.
+${chunkScriptCalls}
 }
 
 if (window.NuvioBootGuard && typeof window.NuvioBootGuard.runCompatibilityGate === "function") {
@@ -345,17 +373,26 @@ async function stagePackage({
       path.join(stagingDir, "index.html"),
       buildIndexHtml({ includeEngineFsService, includePluginService }),
       "utf8"
-    ),
-    writeFile(
-      path.join(stagingDir, "main.js"),
-      buildMainJs({
-        packageId,
-        includeEngineFsService,
-        includePluginService
-      }),
-      "utf8"
     )
   ]);
+
+  // Chrome 47 (Tizen 3.0) cannot compile esbuild's single ~4 MB iife function
+  // in one pass on a 2017 SoC (see splitLegacyBundle.mjs): unwrap and split
+  // the staged bundle into ordered classic scripts, then generate main.js so
+  // it loads them in order after nuvio.env.js and qrcode-generator.js.
+  const bundleChunks = await splitLegacyBundle({ stagingDir });
+
+  await writeFile(
+    path.join(stagingDir, "main.js"),
+    buildMainJs({
+      packageId,
+      includeEngineFsService,
+      includePluginService,
+      bundleChunks
+    }),
+    "utf8"
+  );
+
   await pruneCssFileForPlatform(path.join(stagingDir, "css", "bundle.css"), "tizen");
   if (includeEngineFsService) {
     await stageTizenEngineFsService();
