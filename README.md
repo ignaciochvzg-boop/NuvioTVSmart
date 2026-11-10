@@ -1,57 +1,90 @@
-<div align="center">
+# NuvioTV Smart — soporte Tizen 3.0 (TVs Samsung 2017)
 
-  <img src="assets/brand/app_logo_wordmark.png" alt="Nuvio" width="300" />
+Fork de [NuvioMedia/NuvioTVSmart](https://github.com/NuvioMedia/NuvioTVSmart) que añade soporte real para **Tizen 3.0 / Chromium 47**: el sistema de las TVs Samsung de 2017, que la versión oficial **no soporta** (su política de compatibilidad exige Tizen 4.0+ / Chromium 56+, es decir, TV 2018 en adelante).
 
-  <p>
-    A free, open-source media app for your phone, your desktop, and the TV you already own.
-    <br />
-    Bring your own sources. Nuvio turns them into a library with artwork, ratings, subtitles, and your place saved on every screen.
-  </p>
+**Dispositivo de pruebas:** Samsung **UN58MU6120F** (2017, Tizen 3.0, Chromium 47, SoC de un solo núcleo).
 
-[Website](https://nuvio.tv) · [GitHub releases](https://github.com/NuvioMedia/NuvioTVSmart/releases/latest) · [Support Nuvio](https://nuvio.tv/support)
+## Estado: qué funciona y qué no
 
-</div>
+### Funciona (verificado en el TV) ✅
 
-## Get Nuvio TV
+- **Addons HTML** (streams HTTP directos): sincronización, listado y reproducción. **Testeado con addons HTML** — 9 addons instalados, entre ellos catálogo Nuvio, OpenSubtitles v3 y addons de streaming tipo hdhub / webstreamrmbg.
+- **Subtítulos funcionando**: OpenSubtitles v3 y subtítulos embebidos en la reproducción.
+- **Login por QR** con tu cuenta Nuvio; la sesión persiste entre reinicios.
+- **Reproducción 1080p** por MSE, en tiempo real, sin errores de consola.
+- **Velocidad de carga**: arranque rápido, movimiento de D-pad suave y respuesta inmediata (cifras abajo).
+- Ajustes, biblioteca, búsqueda y navegación general.
 
-Nuvio TV supports **Samsung Tizen TVs from 2018 onward (Tizen 4+)** and **LG webOS TVs from 2020 onward (webOS 5+)**.
-The startup compatibility baseline is Samsung Tizen 4.0 / Chromium 56 and LG webOS 5.0 / Chromium 68 when the platform reports those versions.
+### No probado ⚠️
 
-Platform capabilities are intentionally version-dependent:
+- **Debrid y servicios similares** (Real-Debrid, AllDebrid, etc.): **no se ha probado** en este equipo. No se puede afirmar que funcione ni que falle.
 
-- **Samsung Tizen 4.x** — the app and direct playback are supported, but torrent/P2P playback is unavailable by design. Some advanced audio and subtitle features may also be limited.
-- **Samsung Tizen 5.x, including 5.5** — torrent/P2P playback is supported through the bundled local EngineFS service only. The PluginService, plugin execution, and remote plugin pull/push synchronization are disabled; the Plugins screen is not available.
-  The Node 4.4.3 service runtime observed on Tizen 5.5 is incompatible with the current PluginService syntax and URL APIs. Experimental legacy transports are not included; plugin support starts at Tizen 6.0.
-- **Samsung Tizen 6+** — torrent/P2P and the packaged PluginService are supported. Plugin execution requires the packaged service plus the TV runtime's Worker and WebAssembly support. Tizen 6 and later use the same current Tizen service pipeline.
-- **LG webOS 5.x** — torrent/P2P and the packaged plugin service are supported, with the limited plugin resource quotas used by the older webOS runtime.
-- **LG webOS 6+** — torrent/P2P and the packaged plugin service are supported with the modern plugin resource quotas.
+### No funciona ❌
 
-On Tizen 5+ and LG webOS, torrent/P2P uses only the bundled local companion service; no external torrent streaming server is configured or required.
+- **Torrents / streams P2P**: **no funcionan en Tizen**. No es una omisión de este port: la propia aplicación lo indica en pantalla (*«Torrent/P2P streaming is not supported on this TV»*) y su código desactiva el motor P2P en Tizen. Útil solo con addons HTML.
 
-- [Nuvio TV Installer](https://github.com/NuvioMedia/NuvioTVSmart/releases/latest) for Windows, macOS, and Linux
-- [Samsung Tizen WGT](https://github.com/NuvioMedia/NuvioTVSmart/releases/latest) for manual installation
-- [LG webOS Homebrew repository](https://raw.githubusercontent.com/NuvioMedia/NuvioTVWebOS/main/webosbrew/apps.json)
-- [LG webOS IPK](https://github.com/NuvioMedia/NuvioTVSmart/releases/latest) for manual installation
+## Rendimiento medido (UN58MU6120F)
 
-## Build from source
+| Métrica | Resultado |
+|---|---|
+| Procesado de variables CSS (antes, cuello de botella) | 57,6 s → **9,5 s**, y sin bloquear la interfaz |
+| Contenido visible tras arrancar | 76–92 s → **~14,5 s** |
+| Movimiento D-pad | 25–111 ms por pulsación (media 52 ms) |
+| Tarjeta de stream → pantalla de reproductor | **1,4 s** |
+| Reproducción | 1080p en tiempo real, 35 min de buffer, 0 errores |
+| Pósters / tarjetas del inicio | 204×314 / 212×322 (idéntico al original) |
+| Almacenamiento | 159 KB en localStorage, 61 MB de heap, sin escrituras a disco |
 
-```bash
-git clone https://github.com/NuvioMedia/NuvioTVSmart.git NuvioTVSmart
-cd NuvioTVSmart
-npm install
-npm run build
-```
+## Instalación
 
-Build TV packages with:
+En la TV se instala en modo desarrollador, firmado con tu propio certificado (mismo proceso que cualquier app WGT de Tizen).
 
-```bash
-npm run package:tizen
-npm run package:tizen:store
-npm run package:webos
-```
+### Requisitos
 
-`package:tizen` creates the unsigned WGT used by development and the Nuvio TV Installer. The installer signs it locally for the target TV before installation. `package:tizen:store` is a separate Seller Office build: it requires Tizen Studio/Web CLI and a configured security profile, and creates the signed Store package with the local EngineFS service included so Tizen 5+ retains torrent/P2P playback. Tizen 4 still reports P2P as unsupported at runtime. Nuvio TV is built with JavaScript, HTML, CSS, and platform TV APIs. Building requires Node.js and npm; package installation additionally requires the relevant Tizen or webOS tools.
+- PC con **Tizen Studio** (incluye las herramientas `tizen` y `sdb`) — descarga desde `developer.tizen.org`.
+- TV en la misma red local que el PC.
+- Node.js (para compilar desde el código).
 
-## License
+### Pasos
 
-[GNU General Public License v3.0](./LICENSE)
+1. **TV — Developer Mode**: instala la app **«Developer Mode»** desde la tienda de la TV, introduce la IP de tu PC, actívalo y **reinicia la TV**.
+2. **Conectar**: `sdb connect <IP-DE-LA-TV>`.
+3. **Certificado**: en Tizen Studio abre *Certificate Manager* → *+* → **Author** (alias y contraseña; anótalos). Es el que permite instalar en modo desarrollador.
+4. **Compilar**: en este repositorio:
+
+   ```bash
+   npm install
+   npm run package:tizen
+   ```
+
+   genera el paquete `NuvioTV001_1.3.7.wgt`.
+5. **Firmar** (reemplaza `<alias>` por el de tu certificado):
+
+   ```bash
+   tizen package -t wgt -s <alias> -o salida -- NuvioTV001_1.3.7.wgt
+   ```
+6. **Instalar** en la TV:
+
+   ```bash
+   python scripts/sdb_install.py <IP-DE-LA-TV>
+   ```
+
+   (o `sdb install salida/NuvioTV001_1.3.7.wgt`).
+
+7. Abre la app en la TV y **inicia sesión escaneando el QR** con tu teléfono (con sesión en Nuvio).
+
+## Cambios respecto al proyecto original
+
+- Compilación a dos etapas (esbuild + Babel) con verificador de sintaxis para Chromium 47.
+- Bundle dividido en scripts ordenados (Chromium 47 no compila un bundle de 4 MB de una pasada en estos SoC).
+- Polyfills para Chromium 47: AbortController, URLSearchParams, IntersectionObserver, ResizeObserver, css-vars-ponyfill.
+- Procesado de variables CSS acelerado de 58 s a ~9 s, sin bloquear el hilo principal.
+- `Node.isConnected` polyfill (posters del inicio).
+- `startFragPrefetch` activado (primer fragmento de vídeo antes).
+- Política de compatibilidad: Tizen 2017 / 3.0 / Chromium 47.
+
+## Licencia y atribución
+
+- **GPL-3.0** (ver [LICENSE](LICENSE)) — igual que el proyecto original.
+- Fork no oficial de [NuvioMedia/NuvioTVSmart](https://github.com/NuvioMedia/NuvioTVSmart); el crédito es suyo. Sin relación con NuvioMedia ni con Samsung.
+- El README original del upstream está en el [repositorio oficial](https://github.com/NuvioMedia/NuvioTVSmart#readme).
