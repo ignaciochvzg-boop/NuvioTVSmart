@@ -90,3 +90,14 @@ En la TV se instala en modo desarrollador, firmado con tu propio certificado (mi
 - **GPL-3.0** (ver [LICENSE](LICENSE)) — igual que el proyecto original.
 - Fork no oficial de [NuvioMedia/NuvioTVSmart](https://github.com/NuvioMedia/NuvioTVSmart); el crédito es suyo. Sin relación con NuvioMedia ni con Samsung.
 - El README original del upstream está en el [repositorio oficial](https://github.com/NuvioMedia/NuvioTVSmart#readme).
+
+## Apoya este proyecto
+
+Si este fork te resultó útil y quieres apoyar su mantenimiento (pruebas en TVs, correcciones, guías), puedes hacer una donación con PayPal:
+
+- **[Donar con PayPal](https://www.paypal.com/qrcodes/p2pqrc/BVBMZXPVDZLUQ)**
+- O escanea este código QR con tu celular:
+
+<img src="docs/paypal-qr.svg" alt="Código QR de donación con PayPal" width="160">
+
+> Las donaciones van a la persona que mantiene este fork, **no a NuvioMedia** (el proyecto original). Agradecido igualmente si solo usas el proyecto sin donar.
