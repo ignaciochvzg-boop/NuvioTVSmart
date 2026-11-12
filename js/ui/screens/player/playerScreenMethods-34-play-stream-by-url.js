@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerScreenContext.js";
+import { LastPlaybackStore } from "../../../data/local/lastPlaybackStore.js";
 
 export function createPlayerScreenMethods34() {
   const {
@@ -242,6 +243,8 @@ export function createPlayerScreenMethods34() {
         this.stopSkipIntroCountdownAnimation?.();
         this.chapterSkipIntervalsLoaded = false;
         this.chapterSkipIntervalsRetryAt = 0;
+        this.playerChapters = [];
+        this.closeChaptersPanel?.({ restoreFocus: false });
         this.chaptersRequestToken = Number(this.chaptersRequestToken || 0) + 1;
         this.skipIntroApiIntervals = [];
         this.skipIntroChapterIntervals = [];
@@ -266,8 +269,13 @@ export function createPlayerScreenMethods34() {
       const playbackContext = {
         ...this.buildPlaybackContext(sourceCandidate),
         forceEngine,
-        preserveTrackSelections: preserveWebOsTrackSelections
+        preserveTrackSelections: preserveWebOsTrackSelections,
+        forceLocalProxy: this.tizenLocalProxyRequiredUrl === normalizedStreamUrl
       };
+      LastPlaybackStore.remember({
+        url: /^https?:\/\//i.test(normalizedStreamUrl) ? normalizedStreamUrl : String(nextEngineFsState?.playbackUrl || ""),
+        headers: playbackContext.requestHeaders
+      });
       const startPlayback = (url, context, options) => {
         const playbackPromise = this.startPlayerControllerPlayback(url, context, options);
         const pendingRestore = this.pendingWebOsAddonSubtitleRestore;
@@ -329,7 +337,14 @@ export function createPlayerScreenMethods34() {
           sourceCandidate
         });
         void playbackPromise.then(
-          () => loadTrackDataAfterPlayback(playbackUrl),
+          () => {
+            // The startup watchdog was armed before the route was known; a
+            // direct AVPlay start that can still fall back gets the short one.
+            if (this.activePlaybackUrl === playbackUrl && this.loadingVisible && this.canRetryTizenAvPlayThroughLocalProxy?.()) {
+              this.schedulePlaybackStallGuard();
+            }
+            loadTrackDataAfterPlayback(playbackUrl);
+          },
           () => loadTrackDataAfterPlayback(playbackUrl)
         );
       } else {

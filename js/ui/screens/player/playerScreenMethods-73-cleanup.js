@@ -50,6 +50,12 @@ export function createPlayerScreenMethods73() {
         this.postPlayPendingSelectAction = "";
         this.clearPostPlayFocusTimer();
         this.clearPostPlayLongPressTimer();
+        this.clearEpisodePanelLongPressTimer?.();
+        this.episodePanelPendingSelect = false;
+        this.episodePanelLongPressTriggered = false;
+        this.closeEpisodeOptionsDialog?.();
+        this.chaptersPanelVisible = false;
+        this.closeChaptersPanel?.({ restoreFocus: false });
         this.clearPostPlaySynopsisScrollAnimation();
         this.postPlayLongPressTriggered = false;
         this.cancelPostPlayPlayerSurfaceAnimation();
@@ -157,6 +163,8 @@ export function createPlayerScreenMethods73() {
           clearInterval(this.tickTimer);
           this.tickTimer = null;
         }
+        this.cancelPendingUiTick?.();
+        this.lastUiTickAt = 0;
 
         this.stopSkipIntervalCheckTimer();
 

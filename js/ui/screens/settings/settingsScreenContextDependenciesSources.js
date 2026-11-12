@@ -48,7 +48,18 @@ export {
   normalizeSubtitleTextOpacity
 } from "../../../core/player/subtitleTextOpacity.js";
 
-export { TorrentSettingsStore } from "../../../data/local/torrentSettingsStore.js";
+export {
+  TORRENT_CACHE_SIZES,
+  TORRENT_PROFILES,
+  TorrentSettingsStore,
+  getTorrentProfilePeerLimits
+} from "../../../data/local/torrentSettingsStore.js";
+
+export { P2pCacheService, formatByteSize } from "../../../core/p2p/p2pCacheService.js";
+
+export { runNetworkSpeedTest, runStreamSpeedTest } from "../../../core/network/networkSpeedTestService.js";
+
+export { LastPlaybackStore } from "../../../data/local/lastPlaybackStore.js";
 
 export { LayoutPreferences } from "../../../data/local/layoutPreferences.js";
 
@@ -177,6 +188,7 @@ export {
   SUBTITLE_TEXT_COLOR_OPTIONS,
   SUBTITLE_TEXT_OPACITY_OPTIONS,
   SUBTITLE_OUTLINE_COLOR_OPTIONS,
+  SUBTITLE_HDR_BRIGHTNESS_OPTIONS,
   normalizeSubtitleStyleHex,
   clampSubtitleSize
 } from "./settingsScreenHelpers-02-available-languages.js";

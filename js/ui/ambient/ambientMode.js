@@ -1,4 +1,5 @@
 import { isAmbientTrailerPlaying } from "./ambientPlaybackPolicy.js";
+import { focusWithoutScroll } from "../navigation/focusWithoutScroll.js";
 import { WebOSPlayerExtensions } from "../../platform/webos/webosPlayerExtensions.js";
 import { TizenScreenSaver } from "../../platform/tizen/tizenScreenSaver.js";
 import { Platform } from "../../platform/index.js";
@@ -168,6 +169,18 @@ export const AmbientMode = {
   },
   tick() {
     const route = Router.getCurrent();
+    if (BLOCKED_ROUTES.has(route)) {
+      // Playback and sign-in routes never show Ambient Mode. Skip the settings
+      // read and JSON signature there: one storage parse per second for the
+      // whole film competed with AVPlay and key handling (issue #1208). A
+      // settings or profile change made on such a route is picked up by the
+      // first tick after leaving it.
+      this.lastInteraction = now();
+      this.idleRoute = route;
+      this.setTizenScreenSaverBlocked(false);
+      if (this.showing) this.dismiss();
+      return;
+    }
     const trailerPlaying = isAmbientTrailerPlaying(Router.getCurrentScreen?.());
     if (route !== this.idleRoute || trailerPlaying || this.trailerPlaying !== trailerPlaying) {
       // A completed/paused trailer starts a fresh idle period, as on Android.
@@ -361,11 +374,7 @@ export const AmbientMode = {
       this.previousFocus !== document.body &&
       this.previousFocus !== document.documentElement
     ) {
-      try {
-        this.previousFocus.focus({ preventScroll: true });
-      } catch (_) {
-        this.previousFocus.focus();
-      }
+      focusWithoutScroll(this.previousFocus);
     } else if (canRestoreFocus) {
       this.previousScreen?.applyFocus?.();
     }

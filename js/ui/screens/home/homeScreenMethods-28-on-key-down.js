@@ -56,10 +56,32 @@ export function createHomeScreenMethods28() {
           this.scheduleModernSidebarPillAutoCollapse({ restart: wasIconOnly });
         }
       }
-      if (this.layoutMode === "modern" && isDirectionalKeyCode(code)) {
+      const directionalNavigation = this.layoutMode === "modern" && isDirectionalKeyCode(code);
+      let navigationBefore = null;
+      if (directionalNavigation) {
         this.cancelFocusedPosterFlow();
+        navigationBefore = {
+          node: this.getCurrentFocusedNode(),
+          heroIndex: this.heroIndex,
+          sidebarExpanded: Boolean(this.sidebarExpanded),
+          verticalFastScroll: Boolean(this.modernVerticalFastScrollState)
+        };
       }
-      if (this.handleHomeDpad(event)) {
+      const handledNavigation = this.handleHomeDpad(event);
+      // A key at the edge of a row or list moves nothing. Pausing the trailer
+      // there would hide it with no focus change to restore it.
+      if (
+        directionalNavigation &&
+        handledNavigation &&
+        navigationBefore &&
+        (this.getCurrentFocusedNode() !== navigationBefore.node ||
+          this.heroIndex !== navigationBefore.heroIndex ||
+          Boolean(this.sidebarExpanded) !== navigationBefore.sidebarExpanded ||
+          Boolean(this.modernVerticalFastScrollState) !== navigationBefore.verticalFastScroll)
+      ) {
+        this.pauseActiveTrailerLayersForNavigation();
+      }
+      if (handledNavigation) {
         return;
       }
       const isHomeHoldTarget = this.isHomeHoldTarget(currentFocusedNode);
@@ -209,7 +231,9 @@ export function createHomeScreenMethods28() {
         useEpisodeThumbnails: this.layoutPrefs?.useEpisodeThumbnailsInCw !== false,
         blurNextUp: resolveContinueWatchingBlurNextUp(this.layoutPrefs),
         cardStyle: this.layoutPrefs?.continueWatchingCardStyle || "card",
-        rowKey
+        rowKey,
+        // One preference read per appended batch, not one per card.
+        posterSettings: LayoutPreferences.get()
       };
       const markup = nextItems.map((item, index) => renderContinueWatchingCard(item, startIndex + index, cardOptions)).join("");
       if (!markup) {

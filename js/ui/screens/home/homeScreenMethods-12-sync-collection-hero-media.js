@@ -1,7 +1,8 @@
 import * as internals from "./homeScreenContext.js";
+import { getTrailerCleanupDelayMs } from "../../../platform/tvPerformancePolicy.js";
 
 export function createHomeScreenMethods12() {
-  const { MODERN_HOME_CONSTANTS, firstNonEmpty, isCollectionFolderItem, normalizeCollectionFolderItem } = internals;
+  const { getTvRuntimePerformanceProfile, firstNonEmpty, isCollectionFolderItem, normalizeCollectionFolderItem } = internals;
 
   return {
     syncCollectionHeroMedia(hero = null) {
@@ -143,11 +144,28 @@ export function createHomeScreenMethods12() {
         }
       });
     },
+    cancelTrailerLayerCleanup(container) {
+      if (!container) {
+        return;
+      }
+      const pendingCleanup = this.homeTrailerLayerCleanupTimers?.get?.(container);
+      if (!pendingCleanup) {
+        return;
+      }
+      if (pendingCleanup.idleId) {
+        globalThis.cancelIdleCallback?.(pendingCleanup.idleId);
+      }
+      if (pendingCleanup.timeoutId) {
+        clearTimeout(pendingCleanup.timeoutId);
+      }
+      this.homeTrailerLayerCleanupTimers.delete(container);
+    },
     clearTrailerLayer(container) {
       if (!container) {
         return;
       }
       const pendingCleanup = this.homeTrailerLayerCleanupTimers?.get?.(container);
+      const pendingHide = this.homeTrailerLayerHideTimers?.get?.(container);
       // Home mounts an empty trailer layer for every poster. Leaving Home used
       // to traverse and clear all of those no-op nodes synchronously, which is
       // avoidable on constrained TV runtimes. Keep handling active, populated,
@@ -155,15 +173,11 @@ export function createHomeScreenMethods12() {
       if (!container.classList.contains("is-active") && !container.firstElementChild && !pendingCleanup) {
         return;
       }
-      if (pendingCleanup) {
-        if (pendingCleanup.idleId) {
-          globalThis.cancelIdleCallback?.(pendingCleanup.idleId);
-        }
-        if (pendingCleanup.timeoutId) {
-          clearTimeout(pendingCleanup.timeoutId);
-        }
-        this.homeTrailerLayerCleanupTimers.delete(container);
+      if (pendingHide) {
+        clearTimeout(pendingHide);
+        this.homeTrailerLayerHideTimers.delete(container);
       }
+      this.cancelTrailerLayerCleanup(container);
       this.pauseTrailerLayer(container);
       const activeFrame = container.querySelector("iframe");
       if (activeFrame) {
@@ -184,7 +198,7 @@ export function createHomeScreenMethods12() {
         } catch (_) {}
       }
       container.innerHTML = "";
-      container.classList.remove("is-active");
+      container.classList.remove("is-active", "is-trailer-layer-idle-hidden");
     },
     pauseTrailerLayer(container) {
       if (!container) {
@@ -211,6 +225,35 @@ export function createHomeScreenMethods12() {
           activeVideo.pause();
         } catch (_) {}
       }
+    },
+    scheduleTrailerLayerHide(container) {
+      if (!container) {
+        return;
+      }
+      this.homeTrailerLayerHideTimers ||= new WeakMap();
+      const pendingHide = this.homeTrailerLayerHideTimers.get(container);
+      if (pendingHide) {
+        clearTimeout(pendingHide);
+      }
+      // The layer fades out for 480 ms. Hide it only after the fade, so the
+      // visible transition is unchanged; keeping a transparent iframe in the
+      // compositor for the whole navigation is what we avoid.
+      const timer = setTimeout(() => {
+        this.homeTrailerLayerHideTimers.delete(container);
+        if (!container.isConnected || container.classList.contains("is-active")) {
+          return;
+        }
+        container.classList.add("is-trailer-layer-idle-hidden");
+      }, 520);
+      this.homeTrailerLayerHideTimers.set(container, timer);
+    },
+    pauseActiveTrailerLayersForNavigation() {
+      const layers = this.container?.querySelectorAll(".home-hero-trailer-layer.is-active, .home-poster-trailer-layer.is-active");
+      layers?.forEach((layer) => {
+        this.pauseTrailerLayer(layer);
+        layer.classList.remove("is-active");
+        this.scheduleTrailerLayerHide(layer);
+      });
     },
     scheduleTrailerLayerCleanup(container) {
       if (!container) {
@@ -249,9 +292,10 @@ export function createHomeScreenMethods12() {
           return;
         }
         cleanup();
-      }, MODERN_HOME_CONSTANTS.smartTvTrailerCleanupDelayMs);
+      }, getTrailerCleanupDelayMs(getTvRuntimePerformanceProfile()));
       this.homeTrailerLayerCleanupTimers.set(container, cleanupState);
       container.classList.remove("is-active");
+      this.scheduleTrailerLayerHide(container);
     },
     refreshPendingHomeTrailerCleanup() {
       if (!this.shouldUseImmediateFocusScroll()) {
@@ -274,6 +318,17 @@ export function createHomeScreenMethods12() {
       const media = heroMedia || this.container?.querySelector(".home-modern-hero-media");
       media?.classList.toggle("trailer-active", isActive);
       this.container?.querySelector(".home-modern-stage")?.classList.toggle("is-hero-trailer-active", isActive);
+      if (isActive) {
+        const heroLayer = this.container?.querySelector(".home-hero-trailer-layer");
+        if (heroLayer) {
+          const pendingHide = this.homeTrailerLayerHideTimers?.get?.(heroLayer);
+          if (pendingHide) {
+            clearTimeout(pendingHide);
+            this.homeTrailerLayerHideTimers.delete(heroLayer);
+          }
+          heroLayer.classList.remove("is-trailer-layer-idle-hidden");
+        }
+      }
     },
     restorePersistentHeroTrailer(node, options = {}) {
       if (!this.isModernPosterNode(node)) {

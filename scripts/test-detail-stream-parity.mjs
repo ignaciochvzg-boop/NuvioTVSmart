@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import { build } from "esbuild";
+import { streamProviderHeader } from "../js/core/streams/streamOrdering.js";
 
 const files = [
   [
@@ -98,6 +99,7 @@ const fixtures = {
     return {};
   },
   LocalStore: { get: (_key, fallback) => fallback },
+  focusWithoutScroll: (node) => node?.focus?.(),
   normalizeDetailImdbRatingsVisibility: (value) => value,
   normalizeHomeImdbRatingsVisibility: (value) => value,
   t: (key, args = []) => key + (args.length ? ":" + args[0] : ""),
@@ -113,6 +115,14 @@ const fixtures = {
   StreamBadgeSettingsStore: { snapshot: () => ({}) },
   isPerformanceConstrainedRuntime: () => false,
   contentTextDirection: () => "ltr",
+  showEpisodeImdbRating: () => false,
+  resolveEpisodeImdbRating: () => null,
+  renderImdbBadge: () => "",
+  formatEpisodeCardDate: () => "",
+  renderEpisodeRuntimeLabel: () => "",
+  normalizeEpisodeTitle: (value, fallback) => String(value || fallback || ""),
+  EPISODE_TITLE_MARQUEE_VELOCITY_PX_PER_SECOND: 100,
+  streamProviderHeader,
   ScreenUtils: { indexFocusables() {} }
 };
 const context = vm.createContext({ fixtures, console });
@@ -547,6 +557,41 @@ for (const isWatched of [false, true])
     assert.equal(html.includes("series-episode-status complete"), isWatched);
     assert.equal(html.includes("series-episode-status idle"), !isWatched && !isUnavailable);
     assert.equal(html.includes('class="series-episode-unavailable"'), isUnavailable);
+  }
+
+// Unwatched episode thumbnails must keep the shared Android TV/webOS blur on
+// Tizen instead of the old static-dim fast path.
+const episodeBlurBase = await readFile("css/components-42.css", "utf8");
+assert.match(
+  episodeBlurBase,
+  /\.series-episode-image\.is-blurred\s*\{[^}]*filter:\s*blur\(12px\);/,
+  "unwatched episode thumbs use the shared 12px blur"
+);
+const tizenFastPath = await readFile("css/components-60.css", "utf8");
+assert.doesNotMatch(
+  tizenFastPath,
+  /\.(?:legacy-tizen|performance-constrained)\s+\.series-episode-image\.is-blurred/,
+  "Tizen must not replace the episode blur with a static dim"
+);
+const presentationFor = (blurUnwatchedEpisodes, isWatched) =>
+  api.createMetaDetailsScreenMethods10().getEpisodeCardPresentation.call(
+    {
+      episodeProgressMap: new Map(),
+      isEpisodeMarkedWatched: () => isWatched
+    },
+    { id: "ep", season: 1, episode: 1, title: "Episode" },
+    { blurUnwatchedEpisodes, detailImdbRatingsVisibility: "SHOW_ALL" }
+  );
+for (const blur of [false, true])
+  for (const isWatched of [false, true]) {
+    const presentation = presentationFor(blur, isWatched);
+    assert.equal(presentation.shouldBlur, blur && !isWatched);
+    const html = episodeRenderer.call(
+      { getEpisodeCardPresentation: () => presentation },
+      { id: "ep", episode: 1 },
+      0
+    );
+    assert.equal(html.includes("series-episode-image is-blurred"), blur && !isWatched);
   }
 
 // In-place watched updates follow the same unavailable/idle rules as initial rendering.

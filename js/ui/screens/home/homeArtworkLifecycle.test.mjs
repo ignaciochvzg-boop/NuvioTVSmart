@@ -30,7 +30,6 @@ function buildHome({ rescale = null, tv = true, route = "home", constants = {} }
       CW_DAYS_CAP: 30,
       HOME_LAZY_IMAGE_LIFECYCLE_SELECTOR: LIFECYCLE_SELECTOR,
       HOME_LAZY_IMAGE_ROW_SELECTOR: ROW_SELECTOR,
-      HOME_LAZY_IMAGE_EVICT_MARGIN_PX: 1600,
       HOME_LEGACY_LAZY_HYDRATION_DEBOUNCE_MS: 180,
       HOME_LEGACY_LAZY_HYDRATION_MAX_PER_FRAME: 2,
       Router: { getCurrent: () => route },
@@ -44,9 +43,12 @@ function buildHome({ rescale = null, tv = true, route = "home", constants = {} }
     rescaleHomeArtwork: rescale?.rescale || (() => Promise.resolve(null)),
     releaseHomeArtwork: rescale?.release || (() => {}),
     shouldRescaleHomeArtwork: rescale?.enabled || (() => false),
-    getHomeArtworkPixelRatio: () => 1,
+    getTvArtworkPixelRatio: () => 1,
     getHomeArtworkObjectFit: rescale?.fit || (() => "cover"),
-    isRescalableArtworkFit: (fit) => fit === "cover" || fit === "fill"
+    isRescalableArtworkFit: (fit) => fit === "cover" || fit === "fill",
+    getArtworkEvictIdleMs: () => 0,
+    getArtworkEvictMarginPx: () => 1600,
+    getDeviceMemoryGb: () => 0
   });
   context.globalThis = context;
   context.innerWidth = 1920;
@@ -144,6 +146,7 @@ function makeScreen(context, { rows, images }) {
     isSidebarFocusActive: () => false,
     shouldUseImmediateFocusScroll: () => false,
     isModernVerticalScrollActive: () => false,
+    isModernHydrationScrollActive: () => false,
     getCurrentFocusedNode: () => null
   });
 }
@@ -226,6 +229,7 @@ test("animated vertical navigation waits for the camera to settle before hydrati
   screen.layoutMode = "modern";
   let scrolling = true;
   screen.isModernVerticalScrollActive = () => scrolling;
+  screen.isModernHydrationScrollActive = () => scrolling;
 
   screen.scheduleHomeLazyImageHydration(row, { deferUntilVerticalSettle: true });
   await new Promise((resolve) => setTimeout(resolve, 15));

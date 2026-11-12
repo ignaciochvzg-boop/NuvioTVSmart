@@ -26,11 +26,15 @@ async function removeLocalProfileData(id) {
   const { cancelProfileSettingsCloudSync } = await import("../../data/local/profileScopedStore.js");
   const { PluginStore } = await import("../../data/local/pluginStore.js");
   const { PluginCodeStore } = await import("../../data/local/pluginCodeStore.js");
+  const { HomeCatalogSnapshotStore } = await import("../../data/local/homeCatalogSnapshotStore.js");
   const { HomeCatalogSettingsSyncService } = await import("./homeCatalogSettingsSyncService.js");
   cancelProfileSettingsCloudSync(id);
   HomeCatalogSettingsSyncService.clearProfile(id);
   if (!(await PluginCodeStore.clearProfile(id))) {
     throw new Error("Profile plugin code removal failed");
+  }
+  if (!(await HomeCatalogSnapshotStore.clearProfile(id))) {
+    throw new Error("Profile home catalog cache removal failed");
   }
   if (SessionStore.accessToken !== sessionToken) throw new Error("Profile cleanup account changed");
   PluginStore.clearProfile(id);
@@ -114,7 +118,11 @@ export const ProfileManager = {
     const stored = LocalStore.get(PROFILES_KEY, null);
     if (Array.isArray(stored) && stored.length) {
       const normalized = stored.map((profile, index) => normalizeProfile(profile, index));
-      LocalStore.set(PROFILES_KEY, normalized);
+      // Only write back when normalization changed something; this runs on every
+      // profile lookup and a redundant setItem is a disk write on TV runtimes.
+      if (JSON.stringify(normalized) !== JSON.stringify(stored)) {
+        LocalStore.set(PROFILES_KEY, normalized);
+      }
       return normalized;
     }
     LocalStore.set(PROFILES_KEY, DEFAULT_PROFILES);

@@ -1,4 +1,9 @@
 import { getTvRuntimePerformanceProfile } from "../../platform/tvRuntimePerformance.js";
+import {
+  getArtworkCacheLimit,
+  getDeviceMemoryGb,
+  isLowMemoryDevice
+} from "../../platform/tvPerformancePolicy.js";
 
 // Android decodes artwork at the size Compose is going to draw it: Coil is
 // configured with precision(INEXACT) and hands BitmapFactory the target bounds,
@@ -67,9 +72,65 @@ export function isJpegHeader(bytes) {
   );
 }
 
+// The native client bounds a compressed artwork body to 8 MiB; a huge addon
+// original would otherwise decode into tens of megabytes of pixels inside a
+// worker. The check runs before and after the download.
+export function isArtworkTooLarge(bytes) {
+  return Boolean(bytes) && Number(bytes.byteLength || 0) > 8388608;
+}
+
+/**
+ * JPEG SOF dimensions straight from the header, before any decode. A 4000px
+ * addon original would decode to tens of MiB even when the card paints at
+ * 300px, so the worker uses these numbers to ask createImageBitmap for a
+ * bounded source.
+ */
+export function jpegDimensions(bytes) {
+  if (!bytes || bytes.length < 10 || bytes[0] !== 0xff || bytes[1] !== 0xd8) {
+    return null;
+  }
+  let offset = 2;
+  while (offset + 9 <= bytes.length) {
+    if (bytes[offset] !== 0xff) return null;
+    const marker = bytes[offset + 1];
+    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd9)) {
+      offset += 2;
+      continue;
+    }
+    if (marker === 0xda) return null;
+    const length = (bytes[offset + 2] << 8) | bytes[offset + 3];
+    if (length < 2 || offset + 2 + length > bytes.length) return null;
+    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+      const height = (bytes[offset + 5] << 8) | bytes[offset + 6];
+      const width = (bytes[offset + 7] << 8) | bytes[offset + 8];
+      return width > 0 && height > 0 ? { width, height } : null;
+    }
+    offset += 2 + length;
+  }
+  return null;
+}
+
+/**
+ * The one dimension to clamp for createImageBitmap, or null when the source is
+ * already small enough. Supplying only one side keeps the source aspect ratio,
+ * which the crop below depends on.
+ */
+export function artworkResizeTarget(width, height, maxDimension = 1280) {
+  const w = Number(width) || 0;
+  const h = Number(height) || 0;
+  const max = Number(maxDimension) || 0;
+  if (!(w > 0) || !(h > 0) || !(max > 0)) return null;
+  if (w >= h && w > max) return { width: max };
+  if (h > w && h > max) return { height: max };
+  return null;
+}
+
 const WORKER_SOURCE = `
 const sourceRect = ${computeSourceRect.toString()};
 const isJpeg = ${isJpegHeader.toString()};
+const isTooLarge = ${isArtworkTooLarge.toString()};
+const jpegSize = ${jpegDimensions.toString()};
+const resizeTarget = ${artworkResizeTarget.toString()};
 
 self.onmessage = async (event) => {
   const { id, url, width, height, fit } = event.data || {};
@@ -79,15 +140,28 @@ self.onmessage = async (event) => {
     if (!response.ok) {
       throw new Error("http " + response.status);
     }
+    const declared = Number(response.headers.get("content-length") || 0);
+    if (declared > 8388608) {
+      throw new Error("too large");
+    }
     // Read the bytes off the response rather than the blob: Blob.arrayBuffer
     // is newer than OffscreenCanvas, so some webOS builds have the canvas but
     // not the blob method.
     const bytes = await response.arrayBuffer();
-    if (!isJpeg(new Uint8Array(bytes, 0, Math.min(3, bytes.byteLength)))) {
+    if (isTooLarge(bytes)) {
+      throw new Error("too large");
+    }
+    const view = new Uint8Array(bytes);
+    if (!isJpeg(view)) {
       // Could carry transparency or animation. Leave it to the <img> tag.
       throw new Error("not jpeg");
     }
-    full = await createImageBitmap(new Blob([bytes]));
+    const dimensions = jpegSize(view);
+    const resize = dimensions ? resizeTarget(dimensions.width, dimensions.height, 1280) : null;
+    full = await createImageBitmap(
+      new Blob([bytes]),
+      resize ? { ...resize, resizeQuality: "low" } : undefined
+    );
     if (full.width <= width && full.height <= height) {
       // Already no larger than the card. Re-encoding would only lose quality.
       throw new Error("already small");
@@ -112,20 +186,31 @@ self.onmessage = async (event) => {
 // but it is decoding natively while this has to re-encode in JavaScript. An LG
 // k8lp reports four cores, and filling all four starved the renderer that has
 // to paint the rows badly enough to stall it for seconds, so leave one free.
+export function artworkWorkerCount(cores, deviceMemory) {
+  // A full-size decode is held per job while the source is re-encoded, so the
+  // native client gives a 1 GB set two network threads instead of four. One
+  // worker keeps two jobs in flight, which is that ceiling.
+  if (isLowMemoryDevice(deviceMemory)) {
+    return 1;
+  }
+  const value = Number(cores) || 4;
+  return Math.min(Math.max(value - 1, 1), 3);
+}
+
 function workerCount() {
-  const cores = Number(globalThis.navigator?.hardwareConcurrency) || 4;
-  return Math.min(Math.max(cores - 1, 1), 3);
+  return artworkWorkerCount(globalThis.navigator?.hardwareConcurrency, getDeviceMemoryGb());
 }
 
 // Each entry holds a re-encoded JPEG of roughly 10-25KB, so even the larger
 // cache stays far below the cost of a single oversized decode. Android scales
-// its Coil memory cache by device RAM for the same reason.
+// its Coil memory cache by device RAM for the same reason. Modern TVs get a
+// larger window; constrained generations keep the smaller one.
 function cacheLimit() {
-  const memory = Number(globalThis.navigator?.deviceMemory) || 0;
-  return memory > 0 && memory <= 1 ? 200 : 320;
+  return getArtworkCacheLimit(getTvRuntimePerformanceProfile(), getDeviceMemoryGb());
 }
 
 let pool = null;
+let genericPool = null;
 let supported = null;
 
 function isSupported() {
@@ -139,22 +224,6 @@ function isSupported() {
     );
   }
   return supported;
-}
-
-/**
- * Device pixels per CSS pixel for the panel actually being painted.
- *
- * webOS reports devicePixelRatio 2 on 1080p sets whose CSS viewport is already
- * 1920 wide, so the reported value would quadruple every decode for no visible
- * gain. Comparing the screen to the viewport gives 1 there and still gives 2 on
- * a 4K panel that lays the app out at 1920.
- */
-export function getHomeArtworkPixelRatio() {
-  const viewportWidth = Number(globalThis.innerWidth) || 0;
-  const screenWidth = Number(globalThis.screen?.width) || 0;
-  const measured = viewportWidth > 0 && screenWidth > 0 ? screenWidth / viewportWidth : 1;
-  const reported = Number(globalThis.devicePixelRatio) || 1;
-  return Math.min(Math.max(Math.min(measured, reported), 1), 2);
 }
 
 /**
@@ -190,6 +259,7 @@ function createPool() {
     jobs: new Map(),
     nextId: 1,
     cache: new Map(),
+    failed: new Map(),
     inflight: new Map(),
     disposed: false
   };
@@ -298,6 +368,23 @@ function pump(state) {
   }
 }
 
+// Artwork 404s are deliberately left out: the native client excludes art from
+// its negative cache because a CDN 404 can be transient. Only answers that
+// depend on the bytes themselves are permanent for the session.
+const DETERMINISTIC_ARTWORK_FAILURE = /^(not jpeg|already small|too large)$/;
+const ARTWORK_FAILURE_LIMIT = 512;
+
+function rememberArtworkFailure(state, key, reason) {
+  if (!DETERMINISTIC_ARTWORK_FAILURE.test(String(reason || ""))) {
+    return;
+  }
+  if (state.failed.size >= ARTWORK_FAILURE_LIMIT) {
+    const oldest = state.failed.keys().next().value;
+    if (oldest !== undefined) state.failed.delete(oldest);
+  }
+  state.failed.set(key, true);
+}
+
 function trimCache(state) {
   const limit = cacheLimit();
   if (state.cache.size <= limit) {
@@ -317,37 +404,48 @@ function trimCache(state) {
   }
 }
 
-function getPool() {
-  if (pool === undefined) {
+function getPoolFor(kind) {
+  const current = kind === "generic" ? genericPool : pool;
+  if (current === undefined) {
     return null;
   }
-  if (pool === null) {
-    pool = createPool();
-    if (!pool) {
-      pool = undefined;
+  if (current === null) {
+    const created = createPool();
+    if (!created) {
+      if (kind === "generic") genericPool = undefined;
+      else pool = undefined;
       return null;
     }
+    if (kind === "generic") genericPool = created;
+    else pool = created;
+    return created;
   }
-  return pool;
+  return current;
 }
 
-/**
- * Resolve a card-sized object url for `url`, or null when the original should
- * be used as-is. Never rejects: every failure path falls back to the original.
- */
-export function rescaleHomeArtwork(url, { width, height, fit, priority = 2, isStale = null } = {}) {
+function getPool() {
+  return getPoolFor("home");
+}
+
+function getGenericPool() {
+  return getPoolFor("generic");
+}
+
+function rescaleWithPool(state, url, { width, height, fit, priority = 2, isStale = null } = {}) {
   // Check the request before touching the pool, so artwork that can never be
   // rescaled does not spin up workers on its way to the fallback.
-  if (!url || !(width > 0) || !(height > 0) || !isRescalableArtworkFit(fit)) {
-    return Promise.resolve(null);
-  }
-  const state = getPool();
-  if (!state) {
+  if (!state || !url || !(width > 0) || !(height > 0) || !isRescalableArtworkFit(fit)) {
     return Promise.resolve(null);
   }
   // The fit belongs in the key: the same artwork in the same box is cropped
   // for one card type and stretched for another.
   const key = `${url}|${width}x${height}|${fit}`;
+  // These answers cannot change for the same url and target: a non-JPEG source
+  // stays non-JPEG and a source already smaller than the box stays smaller.
+  // Retrying them on every scroll only spends a worker fetch to learn it again.
+  if (state.failed.has(key)) {
+    return Promise.resolve(null);
+  }
   const cached = state.cache.get(key);
   if (cached) {
     cached.uses += 1;
@@ -381,7 +479,7 @@ export function rescaleHomeArtwork(url, { width, height, fit, priority = 2, isSt
     waiters: 1
   };
   job.promise = new Promise((resolve) => {
-    job.settle = (blob) => {
+    job.settle = (blob, reason) => {
       // A timeout and a late reply can both land, and settling twice would
       // leak a second object url for the same job.
       if (job.done) {
@@ -390,6 +488,9 @@ export function rescaleHomeArtwork(url, { width, height, fit, priority = 2, isSt
       job.done = true;
       state.inflight.delete(key);
       if (!blob || state.disposed) {
+        if (!blob && !state.disposed) {
+          rememberArtworkFailure(state, key, reason);
+        }
         resolve(null);
         return;
       }
@@ -406,35 +507,53 @@ export function rescaleHomeArtwork(url, { width, height, fit, priority = 2, isSt
   return job.promise;
 }
 
-/** Mark a rescaled url as no longer painted so its slot can be reclaimed. */
-export function releaseHomeArtwork(objectUrl) {
-  const state = pool;
+/**
+ * Resolve a card-sized object url for `url`, or null when the original should
+ * be used as-is. Never rejects: every failure path falls back to the original.
+ */
+function shouldQueueRescale(url, { width, height, fit } = {}) {
+  return Boolean(url && width > 0 && height > 0 && isRescalableArtworkFit(fit));
+}
+
+export function rescaleHomeArtwork(url, options) {
+  // Refuse before creating a pool: an unsupported fit must not spin up a
+  // worker just to discover it cannot be drawn.
+  if (!shouldQueueRescale(url, options)) return Promise.resolve(null);
+  return rescaleWithPool(getPool(), url, options);
+}
+
+/** Same contract as rescaleHomeArtwork, with its own pool for non-Home screens. */
+export function rescaleArtwork(url, options) {
+  if (!shouldQueueRescale(url, options)) return Promise.resolve(null);
+  return rescaleWithPool(getGenericPool(), url, options);
+}
+
+function releaseFromPool(state, objectUrl) {
   if (!state || !objectUrl || !String(objectUrl).startsWith("blob:")) {
     return;
   }
   for (const entry of state.cache.values()) {
     if (entry.objectUrl === objectUrl) {
       entry.uses = Math.max(0, entry.uses - 1);
+      // Release is the point where the LRU can actually reclaim the slot; the
+      // next artwork request would otherwise be the first call to trim again.
+      trimCache(state);
       return;
     }
   }
 }
 
-/**
- * Drop every worker and cached url. Used when the home screen unmounts.
- *
- * Callers are waiting on promises that only a worker reply can settle, so
- * tearing the workers down has to settle them too, or the home screen leaves
- * behind a promise per queued poster that can never resolve. They settle to
- * null, which is the same answer a failed rescale gives, so each caller falls
- * back to the original url instead of acting on artwork from a dead pool.
- *
- * The caller is responsible for taking rescaled urls off any element that is
- * still in the document before calling this; the urls are revoked here.
- */
-export function resetHomeArtworkRescaler() {
-  const state = pool;
-  pool = null;
+/** Mark a rescaled url as no longer painted so its slot can be reclaimed. */
+export function releaseHomeArtwork(objectUrl) {
+  releaseFromPool(pool, objectUrl);
+}
+
+/** Mark a non-Home rescaled url as no longer painted. */
+export function releaseArtwork(objectUrl) {
+  releaseFromPool(genericPool, objectUrl);
+}
+
+function resetPool(state) {
   if (!state) {
     return;
   }
@@ -458,4 +577,30 @@ export function resetHomeArtworkRescaler() {
   state.workers.length = 0;
   state.idle.length = 0;
   state.queue.length = 0;
+  state.failed?.clear?.();
+}
+
+/**
+ * Drop every Home worker and cached url. Used when the home screen unmounts.
+ *
+ * Callers are waiting on promises that only a worker reply can settle, so
+ * tearing the workers down has to settle them too, or the home screen leaves
+ * behind a promise per queued poster that can never resolve. They settle to
+ * null, which is the same answer a failed rescale gives, so each caller falls
+ * back to the original url instead of acting on artwork from a dead pool.
+ *
+ * The caller is responsible for taking rescaled urls off any element that is
+ * still in the document before calling this; the urls are revoked here.
+ */
+export function resetHomeArtworkRescaler() {
+  const state = pool;
+  pool = null;
+  resetPool(state);
+}
+
+/** Drop the non-Home pool and its cached urls. */
+export function resetArtworkRescaler() {
+  const state = genericPool;
+  genericPool = null;
+  resetPool(state);
 }

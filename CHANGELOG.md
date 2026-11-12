@@ -1,4 +1,61 @@
-## Unreleased
+## 1.3.11
+
+### Improvements & Fixes
+
+- Home navigation on entry-level 2022 webOS TVs is now smooth: Modern Home tracks no longer become compositor layers on Chromium 87 (about 1,460 layers before), and 1 GB TVs use the constrained effect set (#1313)
+- Home hero age rating and status now share one Android-style badge with an internal divider, instead of two separate pills joined by a dot
+- The in-player audio menu now shows every track on Android's three lines: title, language, and codec | channels | sample rate
+- Returning to Home no longer leaves rescaled posters blank: the retained Home keeps its artwork and pool alive until the DOM is actually discarded, matching Android TV's back stack (#1309)
+- Embedded SubRip subtitles on Samsung TVs keep working when the optional packaged extractor is unavailable, with bounded TX3G retries and a clean reset when the AVPlay track changes (#1306)
+- Blur Unwatched Episodes now applies to the detail rail on Samsung TVs again, matching Android TV and webOS (#1304)
+- Home starts painting sooner: an IndexedDB catalog snapshot is used before addons answer, the startup update check waits for the first Home paint, and poster artwork is decoded lazily at the drawn size
+- Modern TVs wait for the camera to settle before hydrating poster artwork or preloading the next hero, and only the moving track or viewport gets a temporary compositor hint
+- Home trailers pause when a D-pad key actually moves focus and their hidden layers leave the compositor during navigation; the same YouTube iframe is reused instead of rebuilt on return
+- Home artwork and trailer cleanup are tiered by device class, so modern TVs keep a wider artwork window while constrained and legacy sets keep the aggressive release
+- The Home loader keeps animating while the first rows are built on modern TVs, using a pre-rendered strip; it stays visually identical to Android TV
+- Reordering or hiding a Home row no longer discards the cached catalog snapshot, so the next start still paints from cache
+- Added the native legacy caches and RAM safeguards: TMDB negative caching with a hashed URL on disk, escalating retry windows, an 8 MiB artwork body cap, a 1280px source clamp and one artwork worker on 1 GB TVs
+- Supporter tier labels are now the canonical English brand names in every language, and the tier next to the profile logo uses Android's spacing
+- Added an opt-in frame and layer sampler for TV diagnostics
+
+## 1.3.10
+
+### Improvements & Fixes
+
+- Long Home hero descriptions can now auto-scroll instead of being cut off: 3-second delay, Android's speed, end pause, return and edge fades, with the setting synced per profile and available on Modern, Classic and Grid
+- Added Copy Settings to profiles, both while creating one and from the profile options: TV settings and, optionally, missing API keys are copied without touching existing credentials, OAuth, history or library
+- Classic and Grid hero descriptions now use Android's four-line box, matching Modern
+- Stream badges in the player now follow Android TV exactly: "Show in player" stays disabled until a badge pack is imported, and the player pack row only appears when it is active, labelled "Same as stream badges" by default
+- P2P settings now include Android's Torrent profile preset and torrent cache controls: size (off, 2, 5 or 10 GB), live cache usage and one-tap clearing of inactive torrent data
+- Advanced now includes Android's network diagnostics: latency and fast.com download speed test, plus a throughput test against the host of the last played stream
+- Cached torrent data is kept only for inactive streams when cleared, so playback already running is not interrupted
+- webOS torrent playback no longer fails on the first attempt while the companion service and its local runtime are still starting; playback now waits for them like Android TV (#1302) (@WhiteGiso)
+
+## 1.3.9
+
+### Improvements & Fixes
+
+- Fixed Nuvio TV not starting on older Samsung TVs (Tizen 5.0 / Chromium 63) after 1.3.8 (@WhiteGiso)
+- Streams that need add-on headers (such as AnimeWorld) now play on Samsung TVs: the local proxy sends the response headers AVPlay expects, so MP4 files with the index at the end no longer stall at startup (@WhiteGiso)
+- When AVPlay cannot start a source directly, for example through an add-on proxy that sends lowercase range headers, Samsung TVs now retry it once through the local proxy instead of waiting a minute and failing, so these streams play like on Android TV (@WhiteGiso)
+- The local playback proxy is now only a fallback on Tizen and webOS: sources that play without the add-on headers open directly from the CDN (@WhiteGiso)
+
+## 1.3.8
+
+### Improvements & Fixes
+
+- Added Collections on Smart TV: browse, create and edit collections and folders with the Android TV layout
+- Added the chapters panel for Matroska and MP4 playback, Android-style episode options with long-press, and HDR/Dolby Vision subtitle styling with matching control dimming
+- Added cross-provider episode mapping for Trakt, MDBList and add-on lists, including anime split-season numbering, so watched state, resume and scrobbles stay aligned
+- Plugin providers now start in most-played order and remember the provider used for a series
+- Aligned post-play, trailer Back behaviour and AutoSync outcome handling with Android TV
+- Updated runtime translations, including Bengali and Croatian
+- Aligned legacy webOS and Tizen stream layouts with Android TV (#1280)
+- Restored the Android TV stream panel size on Tizen (#1277)
+- Hid the unusable compatibility bypass and kept focus visible on older Tizen TVs (#1267)
+- Matched the canonical media server sync envelope and cloud server import (#1274)
+- Aligned Modern sidebar focus states and removed the extra icon circle with Android TV (#1268)
+- Restored Continue Watching artwork blur on Tizen (#1269)
 
 ## 1.3.7
 

@@ -1,5 +1,6 @@
 import { LiveDurationGrowth, isLivePlayback, nextLiveDurationGrowth } from "./livePlaybackUi.js";
-import { syncHtmlSubtitleClearance } from "./subtitleOverlayClearance.js";
+import { focusWithoutScroll } from "../../navigation/focusWithoutScroll.js";
+import { CONTROLS_HIDE_TRANSITION_MS, syncHtmlSubtitleClearance } from "./subtitleOverlayClearance.js";
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerScreenContext.js";
 
@@ -254,6 +255,12 @@ export function createPlayerScreenMethods29() {
     setControlsVisible(visible, { focus = false } = {}) {
       const wasControlsVisible = this.controlsVisible;
       this.controlsVisible = Boolean(visible);
+      if (this.controlsVisible) {
+        this.controlsHideUntil = 0;
+      } else if (wasControlsVisible) {
+        // Keep subtitle clearance until the 200ms fade finishes.
+        this.controlsHideUntil = Date.now() + CONTROLS_HIDE_TRANSITION_MS;
+      }
       if (this.isExternalFrameMode()) {
         return;
       }
@@ -306,15 +313,7 @@ export function createPlayerScreenMethods29() {
       if (!root || typeof root.focus !== "function") {
         return;
       }
-      try {
-        root.focus({ preventScroll: true });
-      } catch (_) {
-        try {
-          root.focus();
-        } catch (_) {
-          // Best effort on older TV engines.
-        }
-      }
+      focusWithoutScroll(root);
     },
     focusFirstControl() {
       this.stickyProgressFocus = false;

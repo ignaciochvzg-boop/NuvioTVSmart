@@ -58,6 +58,18 @@ export function createHomeScreenMethods03() {
       }
       return this.isScrollAnimationActive(this.modernCameraFollowLastVerticalContainer, "y");
     },
+    isModernHydrationScrollActive() {
+      if (this.layoutMode !== "modern") {
+        return false;
+      }
+      if (this.isModernVerticalScrollActive()) {
+        return true;
+      }
+      if (this.isPerformanceConstrained() || this.isLegacyTvRuntime()) {
+        return false;
+      }
+      return this.isScrollAnimationActive(this.modernCameraFollowLastHorizontalContainer, "x");
+    },
     isSidebarFocusActive() {
       return Boolean(this.container?.querySelector(".home-sidebar .focusable.focused, .modern-sidebar-panel .focusable.focused"));
     },
@@ -184,11 +196,10 @@ export function createHomeScreenMethods03() {
       );
     },
     shouldUseImmediateFocusScroll() {
-      return (
-        this.isPerformanceConstrained() ||
-        globalThis?.document?.body?.classList?.contains("legacy-tizen") ||
-        globalThis?.document?.documentElement?.classList?.contains("legacy-tizen")
-      );
+      // Camera moves snap only on constrained runtimes. Every Samsung set
+      // carries legacy-tizen as a layout fallback, so that class must not
+      // decide motion: a 2022+ Tizen tweens like webOS and Android TV (#1250).
+      return this.isPerformanceConstrained();
     },
     hasCollectionHomeRows() {
       return Array.isArray(this.collections) && this.collections.length > 0;
@@ -315,16 +326,20 @@ export function createHomeScreenMethods03() {
         // the existing vertical and constrained-runtime throttles.
         return 48;
       }
-      if (!Platform.isBrowser()) {
-        return direction === "up" || direction === "down"
+      const baseThrottleMs =
+        direction === "up" || direction === "down"
           ? MODERN_HOME_CONSTANTS.verticalKeyRepeatThrottleMs
           : MODERN_HOME_CONSTANTS.keyRepeatThrottleMs;
-      }
+      // Legacy / constrained TV back-off must run before the generic
+      // non-browser return, otherwise it is unreachable on Tizen and webOS.
       if (this.isLegacyTvRuntime()) {
-        return Math.max(MODERN_HOME_CONSTANTS.keyRepeatThrottleMs, 120);
+        return Math.max(baseThrottleMs, 120);
       }
       if (this.isPerformanceConstrained()) {
-        return Math.max(MODERN_HOME_CONSTANTS.keyRepeatThrottleMs, 100);
+        return Math.max(baseThrottleMs, 100);
+      }
+      if (!Platform.isBrowser()) {
+        return baseThrottleMs;
       }
       return MODERN_HOME_CONSTANTS.keyRepeatThrottleMs;
     }
