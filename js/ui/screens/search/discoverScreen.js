@@ -214,7 +214,7 @@ function setContainerScrollTop(container, top, behavior = "auto") {
   const resolvedTop = Math.max(0, Math.min(maxScrollTop, Number(top || 0)));
   if (behavior === "smooth") {
     if (typeof container.scrollTo === "function") {
-      container.scrollTo({ top: resolvedTop, behavior: "smooth" });
+      container.scrollTo({ top: resolvedTop, behavior: "auto" });
     } else {
       container.scrollTop = resolvedTop;
     }
@@ -232,7 +232,7 @@ function setContainerScrollTop(container, top, behavior = "auto") {
 function scrollNodeIntoContainerView(
   node,
   container,
-  { center = false, padding = 18, behavior = "smooth" } = {}
+  { center = false, padding = 18, behavior = "auto" } = {}
 ) {
   if (!(node instanceof HTMLElement) || !(container instanceof HTMLElement)) {
     return null;
@@ -256,11 +256,8 @@ function scrollNodeIntoContainerView(
   if (Math.abs(resolvedTop - currentTop) <= 1) {
     return resolvedTop;
   }
-  if (behavior === "smooth") {
-    setContainerScrollTop(container, resolvedTop, "smooth");
-  } else {
-    setContainerScrollTop(container, resolvedTop, "auto");
-  }
+  // Smooth scrolling is disabled on this port: every scroll is instant.
+  setContainerScrollTop(container, resolvedTop, "auto");
   return resolvedTop;
 }
 

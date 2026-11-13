@@ -115,7 +115,7 @@ export function createCastDetailScreenMethods02() {
         nextScrollLeft = Math.max(0, Math.min(track.scrollWidth - track.clientWidth, nextScrollLeft));
         if (Math.abs(nextScrollLeft - track.scrollLeft) >= 1) {
           if (!instant && typeof track.scrollTo === "function") {
-            track.scrollTo({ left: nextScrollLeft, behavior: "smooth" });
+            track.scrollTo({ left: nextScrollLeft, behavior: "auto" });
           } else {
             track.scrollLeft = nextScrollLeft;
           }
@@ -131,7 +131,7 @@ export function createCastDetailScreenMethods02() {
       if (firstSection && focusedSection === firstSection) {
         if (shell.scrollTop > 0) {
           if (!instant && typeof shell.scrollTo === "function") {
-            shell.scrollTo({ top: 0, behavior: "smooth" });
+            shell.scrollTo({ top: 0, behavior: "auto" });
           } else {
             shell.scrollTop = 0;
           }
@@ -158,7 +158,7 @@ export function createCastDetailScreenMethods02() {
         return;
       }
       if (!instant && typeof shell.scrollTo === "function") {
-        shell.scrollTo({ top: nextScrollTop, behavior: "smooth" });
+        shell.scrollTo({ top: nextScrollTop, behavior: "auto" });
       } else {
         shell.scrollTop = nextScrollTop;
       }

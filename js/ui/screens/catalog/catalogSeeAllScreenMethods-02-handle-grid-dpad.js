@@ -54,7 +54,7 @@ export function createCatalogSeeAllScreenMethods02() {
         if (!targetRowNodes?.length) {
           if (direction === "up" && row === 0) {
             const shell = this.container?.querySelector(".seeall-shell") || null;
-            this.savedScrollTop = setContainerScrollTop(shell, 0, "smooth");
+            this.savedScrollTop = setContainerScrollTop(shell, 0, "auto");
           }
           return true;
         }

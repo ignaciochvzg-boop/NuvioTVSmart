@@ -131,7 +131,7 @@ for (const platform of ["tizen", "webos"]) {
         ]
       });
       assert.equal(libraryItem.poster, "https://image.tmdb.org/t/p/w342/p.jpg");
-      assert.equal(libraryItem.background, "https://image.tmdb.org/t/p/w1280/b.jpg");
+      assert.equal(libraryItem.background, "https://image.tmdb.org/t/p/w780/b.jpg");
     });
   });
 
@@ -185,19 +185,23 @@ test("non-TMDB poster URLs stay byte-for-byte unchanged on every runtime", () =>
   }
 });
 
-test("backdrops still resolve to w1280 on TVs without the rescaler", () => {
+test("backdrops resolve to at most w780 on TVs without the rescaler", () => {
   withRuntime({ platform: "tizen", offscreenCanvas: false }, () => {
     assert.equal(
       normalizeTmdbBackdropUrl(ORIGINAL_BACKDROP),
-      "https://image.tmdb.org/t/p/w1280/backdrop.jpg"
+      "https://image.tmdb.org/t/p/w780/backdrop.jpg"
+    );
+    assert.equal(
+      normalizeTmdbBackdropUrl("https://image.tmdb.org/t/p/w1280/backdrop.jpg"),
+      "https://image.tmdb.org/t/p/w780/backdrop.jpg"
     );
     assert.equal(
       normalizeTmdbBackdropUrl("https://image.tmdb.org/t/p/w780/backdrop.jpg"),
-      "https://image.tmdb.org/t/p/w1280/backdrop.jpg"
+      "https://image.tmdb.org/t/p/w780/backdrop.jpg"
     );
     assert.equal(
       mdbMedia({ ids: { imdb: "tt0001" }, backdrop: "/b.jpg" }).background,
-      "https://image.tmdb.org/t/p/w1280/b.jpg"
+      "https://image.tmdb.org/t/p/w780/b.jpg"
     );
   });
 });

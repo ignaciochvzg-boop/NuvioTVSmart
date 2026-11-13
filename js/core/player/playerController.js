@@ -100,6 +100,9 @@ export {
   AVPLAY_BUFFER_FOR_PLAY_SECONDS,
   AVPLAY_BUFFER_FOR_RESUME_SECONDS,
   AVPLAY_BUFFERING_TIMEOUT_SECONDS,
+  TIZEN_AVPLAY_BUFFER_FOR_PLAY_SECONDS,
+  TIZEN_AVPLAY_BUFFER_FOR_RESUME_SECONDS,
+  TIZEN_AVPLAY_BUFFERING_TIMEOUT_SECONDS,
   TIZEN_AVPLAY_DISPLAY_RECT_STATES,
   AVPLAY_SEEK_TIMEOUT_MS,
   WEBOS_LIVE_INITIAL_MANIFEST_SIZE,
@@ -128,9 +131,21 @@ const WEBOS_AUDIO_TRACK_SELECTION_TIMEOUT_MS = 4000;
 const AVPLAY_BUFFER_FOR_PLAY_SECONDS = 5;
 const AVPLAY_BUFFER_FOR_RESUME_SECONDS = 4;
 const AVPLAY_BUFFERING_TIMEOUT_SECONDS = 10;
+// Tizen (issue #1279): Samsung's default buffer is "10 seconds or 32 MB,
+// whichever is smaller" — at 4K bitrates (~50 Mbps ≈ 6.25 MB/s) that is only
+// ~5 s of video, so high-bitrate streams rebuffer constantly even on fast
+// networks. Explicit second-based values remove the byte cap, and the larger
+// resume buffer stops the drain-and-stall cycle (Samsung's own rebuffer
+// example uses 15 s).
+const TIZEN_AVPLAY_BUFFER_FOR_PLAY_SECONDS = 10;
+const TIZEN_AVPLAY_BUFFER_FOR_RESUME_SECONDS = 15;
+// Samsung defaults to a 20-second buffering timeout; the larger resume buffer
+// needs more fill headroom before AVPlay treats buffering as failed.
+const TIZEN_AVPLAY_BUFFERING_TIMEOUT_SECONDS = 30;
 const TIZEN_AVPLAY_DISPLAY_RECT_STATES = new Set(["IDLE", "READY", "PLAYING", "PAUSED"]);
-// Tizen keeps Samsung's default 20-second buffering timeout; allow a short
-// grace period for the seek callback before treating the native session as stuck.
+// AVPlay's buffering timeout is now 30 seconds on Tizen (issue #1279); keep a
+// matching grace period for the seek callback before treating the native
+// session as stuck.
 const AVPLAY_SEEK_TIMEOUT_MS = 30_000;
 // Keep webOS live HLS startup away from the moving playlist edge. This matches
 // hls.js' default live sync distance and gives the first rendition enough data

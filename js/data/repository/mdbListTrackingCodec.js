@@ -105,7 +105,7 @@ export function mdbMedia(value) {
     title: row.title || row.name || null,
     year: row.year ?? null,
     poster: image(row.poster, preferredTmdbCardPosterSize()),
-    background: image(row.backdrop || row.background, "w1280"),
+    background: image(row.backdrop || row.background, "w780"),
     runtime: positiveId(row.runtime) <= 2147483647 ? positiveId(row.runtime) || 0 : 0
   };
 }

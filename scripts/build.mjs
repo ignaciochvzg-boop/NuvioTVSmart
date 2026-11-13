@@ -644,7 +644,10 @@ async function buildSubtitleAutoSyncWorker() {
     bundle: true,
     platform: "browser",
     format: "iife",
-    target: [`chrome${compatibilityPolicy.chromiumVersion}`],
+    // Same two-stage legacy target as every other bundle: chrome47 makes
+    // esbuild refuse to emit `const`, and Chromium 47 only runs const/let in
+    // strict mode (the banner supplies it).
+    ...legacyScriptTarget,
     minify: !debugBundle,
     legalComments: "none"
   });

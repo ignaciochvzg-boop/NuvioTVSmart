@@ -47,3 +47,53 @@
 .settings-action-row.settings-info-row .settings-row-value {
   font-weight: 600;
 }
+
+/* ---------------------------------------------------------------------------
+   Motion shutdown (this port).
+
+   Focus movement, fades, carousels, panel opens and ken-burns are applied in a
+   single frame, matching the Roku build. Two mechanisms, chosen deliberately:
+
+   - Transitions: `transition: none` on every element sets transition-property
+     to none, which outranks the per-element `transition-duration: 140ms`
+     overrides scattered through components-44..60 (none of them redeclare
+     transition-property). The handful of rules that DO re-enable a transition
+     through the shorthand were neutralized at their source instead of being
+     shadowed here, because the shorthand would win on specificity.
+
+   - Animations: flattened to one 0.01 ms frame rather than `animation: none`,
+     so keyframes that end in `forwards` (profile PIN layer, library picker
+     menu, route panels, player loading identity) still resolve to their end
+   state instead of freezing on the invisible first frame. This mirrors
+   the policy the codebase already applies under `.performance-constrained`.
+   ------------------------------------------------------------------------- */
+*,
+*::before,
+*::after {
+  transition: none !important;
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+}
+
+/* Functional loaders are exempt: they are progress feedback, not decoration.
+   The arc's clock is read by resolveLoaderSpriteDelay(), and the home strip is
+   compositor-driven so it keeps moving while Home mounts. The sprite rules use
+   longhands so `animation-delay: var(--loader-sprite-delay)` still phases the
+   strip with the arc. */
+.nuvio-loading-indicator-arc {
+  animation: nuvioLoadingIndicatorArc 2000ms linear infinite !important;
+}
+
+.home-loading-spinner.has-loader-sprite::before {
+  animation-name: homeLoadingSprite !important;
+  animation-duration: 2000ms !important;
+  animation-timing-function: steps(120) !important;
+  animation-iteration-count: infinite !important;
+}
+
+.home-loading-spinner.has-loader-sprite.has-loader-sprite-60::before {
+  animation-name: homeLoadingSprite60 !important;
+  animation-duration: 2000ms !important;
+  animation-timing-function: steps(60) !important;
+  animation-iteration-count: infinite !important;
+}

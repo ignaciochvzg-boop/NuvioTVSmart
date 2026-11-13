@@ -220,7 +220,7 @@ export const collectionSourceResolver = {
         ? {
             title: String(payload.name || "").trim() || null,
             coverImageUrl:
-              tmdbImage(payload.poster_path, "w500") || tmdbImage(payload.backdrop_path, "w1280")
+              tmdbImage(payload.poster_path, "w500") || tmdbImage(payload.backdrop_path, "w780")
           }
         : null;
     }

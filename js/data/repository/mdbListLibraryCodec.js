@@ -142,7 +142,7 @@ export function decodeMdbListItems(payload) {
         ids,
         name: row.title || row.name || id,
         poster: image(row.poster, preferredTmdbCardPosterSize()),
-        background: image(row.backdrop || row.background, "w1280"),
+        background: image(row.backdrop || row.background, "w780"),
         description: row.description || row.overview || "",
         genres: [
           ...new Set(

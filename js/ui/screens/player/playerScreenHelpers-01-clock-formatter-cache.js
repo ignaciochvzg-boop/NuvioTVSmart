@@ -224,7 +224,13 @@ export const ENGINEFS_NAVIGATION_CLEANUP_GRACE_MS = 1500;
 
 export const STARTUP_PLAYBACK_ADVANCE_EPSILON_SECONDS = 0.001;
 
-export const BUFFERING_SPINNER_STALL_MS = 0;
+// Show the buffering spinner only after playback has made no progress for
+// 1.5 s. AVPlay fires onbufferingstart for sub-second network jitter, and the
+// old 0 ms threshold flashed "buffer" on every micro-stall (issue #1279).
+// Used both as the spinner debounce and as the stall gate in
+// isBufferingSpinnerVisible(); the seek spinner has its own path and is
+// unaffected.
+export const BUFFERING_SPINNER_STALL_MS = 1500;
 
 export const LOADING_LOGO_FILL_TARGET_LERP = 0.22;
 

@@ -13,8 +13,9 @@ export const TMDB_METADATA_MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
 
 export const TMDB_IMAGE_SIZES = {
   poster: "w342",
-  // Match Android TV: hero backdrops need enough source pixels for a 1080p TV.
-  backdrop: "w1280",
+  // w780 covers a 1080p hero with headroom while cutting backdrop bytes ~60%
+  // versus w1280 (decode happens on the main thread on legacy TV engines).
+  backdrop: "w780",
   logo: "w300",
   titleLogo: "w500",
   // Match Android TV: episode cards are wider than 300px on the TV layout.

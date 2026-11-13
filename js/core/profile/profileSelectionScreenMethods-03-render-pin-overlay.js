@@ -178,11 +178,11 @@ export function createProfileSelectionScreenMethods03() {
         }
         const gridNode = node.closest(".profile-editor-avatar-grid");
         const avatarButtons = Array.from(gridNode?.querySelectorAll("[data-action='select-avatar']") || []);
-        centerAvatarRowInScrollContainer(node, gridNode, avatarButtons, "smooth");
+        centerAvatarRowInScrollContainer(node, gridNode, avatarButtons, "auto");
       }
 
       if (category) {
-        node.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+        node.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "auto" });
       }
     },
     restoreFocus() {

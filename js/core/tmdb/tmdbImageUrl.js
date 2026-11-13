@@ -38,15 +38,16 @@ export function resetPreferredTmdbCardPosterSizeForTests() {
 }
 
 /**
- * Keep Home artwork within the source sizes used by Android TV.
- * Keep unrelated artwork URLs byte-for-byte unchanged.
+ * Keep Home artwork within the source sizes used by Android TV, but cap
+ * backdrops at w780 on this port: w1280 costs ~2.6x the bytes and TV engines
+ * without OffscreenCanvas decode every backdrop on the main thread.
  */
 export function normalizeTmdbBackdropUrl(value) {
   const normalized = String(value || "").trim();
   if (!normalized || !TMDB_IMAGE_HOST_PATTERN.test(normalized)) {
     return normalized;
   }
-  return normalized.replace(/(\/t\/p\/)(?:original|w780)\//i, "$1w1280/");
+  return normalized.replace(/(\/t\/p\/)(?:original|w1280)\//i, "$1w780/");
 }
 
 export function normalizeTmdbPosterUrl(value) {

@@ -7,6 +7,9 @@ export function createPlayerControllerMethods08() {
     AVPLAY_BUFFER_FOR_PLAY_SECONDS,
     AVPLAY_BUFFER_FOR_RESUME_SECONDS,
     AVPLAY_BUFFERING_TIMEOUT_SECONDS,
+    TIZEN_AVPLAY_BUFFER_FOR_PLAY_SECONDS,
+    TIZEN_AVPLAY_BUFFER_FOR_RESUME_SECONDS,
+    TIZEN_AVPLAY_BUFFERING_TIMEOUT_SECONDS,
     TIZEN_AVPLAY_DISPLAY_RECT_STATES,
     normalizeTizenAvPlayDisplayRect,
     syncTizenAvPlayObjectStyle
@@ -198,10 +201,31 @@ export function createPlayerControllerMethods08() {
     },
     configureAvPlayBuffering() {
       const avplay = this.getAvPlay();
-      if (!avplay || Platform.isTizen()) {
-        // Match Stremio's Tizen AVPlay path: leave buffering thresholds and the
-        // timeout to Samsung's model-specific defaults. Small fixed buffers can
-        // make high-bitrate REMUX playback repeatedly drain and resume.
+      if (!avplay) {
+        return;
+      }
+
+      if (Platform.isTizen()) {
+        // Issue #1279: leaving Samsung's model-specific defaults made
+        // high-bitrate streams rebuffer constantly — the default is 10 s but
+        // capped at 32 MB, which is only ~5 s of 4K. Explicit second-based
+        // parameters remove the byte cap; a larger resume buffer stops the
+        // drain-and-stall cycle. Must run in IDLE, right after open().
+        try {
+          avplay.setBufferingParam?.("PLAYER_BUFFER_FOR_PLAY", "PLAYER_BUFFER_SIZE_IN_SECOND", TIZEN_AVPLAY_BUFFER_FOR_PLAY_SECONDS);
+        } catch (_) {
+          // Older firmware can reject custom buffering parameters.
+        }
+        try {
+          avplay.setBufferingParam?.("PLAYER_BUFFER_FOR_RESUME", "PLAYER_BUFFER_SIZE_IN_SECOND", TIZEN_AVPLAY_BUFFER_FOR_RESUME_SECONDS);
+        } catch (_) {
+          // Keep AVPlay's default resume buffer when unsupported.
+        }
+        try {
+          avplay.setTimeoutForBuffering?.(TIZEN_AVPLAY_BUFFERING_TIMEOUT_SECONDS);
+        } catch (_) {
+          // Keep AVPlay's default timeout when unsupported.
+        }
         return;
       }
 

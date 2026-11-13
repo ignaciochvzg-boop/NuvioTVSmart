@@ -82,7 +82,7 @@ export function createTmdbEntityBrowseScreenMethods02() {
         nextLeft = Math.max(0, Math.min(maxLeft, nextLeft));
         if (Math.abs(nextLeft - track.scrollLeft) > 1) {
           if (!instant && typeof track.scrollTo === "function") {
-            track.scrollTo({ left: nextLeft, behavior: "smooth" });
+            track.scrollTo({ left: nextLeft, behavior: "auto" });
           } else {
             track.scrollLeft = nextLeft;
           }
@@ -107,7 +107,7 @@ export function createTmdbEntityBrowseScreenMethods02() {
       if (firstRail && focusedRail === firstRail) {
         if (shell.scrollTop > 0) {
           if (!instant && typeof shell.scrollTo === "function") {
-            shell.scrollTo({ top: 0, behavior: "smooth" });
+            shell.scrollTo({ top: 0, behavior: "auto" });
           } else {
             shell.scrollTop = 0;
           }
@@ -133,7 +133,7 @@ export function createTmdbEntityBrowseScreenMethods02() {
       nextTop = Math.max(0, Math.min(maxTop, nextTop));
       if (Math.abs(nextTop - shell.scrollTop) > 1) {
         if (!instant && typeof shell.scrollTo === "function") {
-          shell.scrollTo({ top: nextTop, behavior: "smooth" });
+          shell.scrollTo({ top: nextTop, behavior: "auto" });
         } else {
           shell.scrollTop = nextTop;
         }

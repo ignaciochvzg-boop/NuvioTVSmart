@@ -126,7 +126,7 @@
   max-height: min(25vw, 480px);
   padding: min(0.417vw, 8px) min(0.833vw, 16px);
   overflow-y: auto;
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
 }
 
 .profile-background-grid::-webkit-scrollbar {
@@ -265,7 +265,7 @@
   max-height: min(21.875vw, 420px);
   padding: min(0.417vw, 8px) min(0.833vw, 16px);
   overflow-y: auto;
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
 }
 
 .profile-editor-avatar-grid::-webkit-scrollbar {

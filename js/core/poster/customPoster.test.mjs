@@ -18,8 +18,8 @@ test("every screen gets the same bounded TMDB artwork as Home", () => {
     SETTINGS
   );
   assert.equal(item.poster, "https://image.tmdb.org/t/p/w500/poster.jpg");
-  assert.equal(item.backdrop, "https://image.tmdb.org/t/p/w1280/backdrop.jpg");
-  assert.equal(item.landscapePoster, "https://image.tmdb.org/t/p/w1280/landscape.jpg");
+  assert.equal(item.backdrop, "https://image.tmdb.org/t/p/w780/backdrop.jpg");
+  assert.equal(item.landscapePoster, "https://image.tmdb.org/t/p/w780/landscape.jpg");
 });
 
 test("non-TMDB and custom poster URLs are left byte-for-byte unchanged", () => {

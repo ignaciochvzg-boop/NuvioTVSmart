@@ -91,6 +91,23 @@
   align-items: start;
 }
 
+/* Tizen 3.0/4.0 (Chromium < 57) has no CSS Grid. Without this fallback the
+   see-all cards stack one per row and the whole grid renders as a single
+   vertical column ("grid de ver más vertical"). Flexbox preserves the same
+   wrapping columns, and margins reproduce the gap where flex gap is missing. */
+html.no-css-grid .seeall-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  align-items: flex-start;
+  gap: 20px 16px;
+}
+
+html.no-css-grid.no-flex-gap .seeall-grid > .seeall-card {
+  margin-right: 16px;
+  margin-bottom: 20px;
+}
+
 .seeall-card {
   width: 248px;
   border-radius: 12px;

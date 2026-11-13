@@ -25,7 +25,8 @@ const TRANSFORM_FILES = [
   "app.bundle.js",
   "assets/libs/ass.min.js",
   "assets/libs/quickjs-emscripten.global.js",
-  "assets/runtime/plugin-worker.js"
+  "assets/runtime/plugin-worker.js",
+  "assets/runtime/subtitle-autosync-worker.js"
 ];
 
 export async function babelLegacyPass({ distDir }) {

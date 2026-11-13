@@ -207,7 +207,7 @@ function animateScrollTop(container, clampedTarget, duration = 220) {
   centeredScrollAnimations.set(container, requestAnimationFrame(step));
 }
 
-function centerAvatarRowInScrollContainer(node, container, siblingNodes, behavior = "smooth") {
+function centerAvatarRowInScrollContainer(node, container, siblingNodes, behavior = "auto") {
   if (!node || !container) {
     return;
   }

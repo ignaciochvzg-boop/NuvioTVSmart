@@ -445,13 +445,15 @@
   transition: none !important;
 }
 
-/* Keep the Android-aligned Hero asset crossfade isolated from the broader
-   constrained-TV animation shutdown. It runs only after the next asset has
-   been preloaded; card, scroll and focus animations remain disabled. */
+/* This port ships without the Android-aligned Hero asset crossfade: the next
+   preloaded asset replaces the current one in a single frame, like every other
+   card, scroll and focus change. The shorthand is disabled here because a
+   `transition` declaration re-enables transition-property, which the global
+   kill in components-64 cannot outrank. */
 
 .performance-constrained .home-screen-shell .home-hero-backdrop,
 .performance-constrained .home-screen-shell .home-hero-logo {
-  transition: opacity 300ms ease !important;
+  transition: none !important;
 }
 
 .performance-constrained .home-screen-shell.home-layout-modern .home-hero-backdrop,

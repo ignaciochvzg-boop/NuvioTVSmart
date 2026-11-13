@@ -53,7 +53,7 @@ export const TMDB_API_URL = "https://api.themoviedb.org/3";
 
 export const TMDB_POSTER_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w342";
 
-export const TMDB_BACKDROP_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w1280";
+export const TMDB_BACKDROP_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w780";
 
 export const TRAKT_PAGE_SIZE = 50;
 
