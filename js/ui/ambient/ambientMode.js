@@ -27,6 +27,7 @@ const BLOCKED_ROUTES = new Set([
   "authSignIn",
   "serverConnection"
 ]);
+const TIZEN_SCREEN_SAVER_BLOCK_IDLE_MS = 10000;
 const now = () => globalThis.performance?.now?.() ?? Date.now();
 let lastImageFailure = "";
 function logImageFailure(url, reason) {
@@ -209,7 +210,11 @@ export const AmbientMode = {
       if (this.showing) this.dismiss();
       return;
     }
-    this.setTizenScreenSaverBlocked(true);
+    // The first AppCommon call loads Samsung's plugin synchronously (243 ms on
+    // a UE50RU7400), and the first allowed tick lands while Home is mounting.
+    // The TV screensaver needs minutes of idle, so wait for a quiet moment.
+    if (now() - this.lastInteraction >= TIZEN_SCREEN_SAVER_BLOCK_IDLE_MS)
+      this.setTizenScreenSaverBlocked(true);
     if (!this.showing && now() - this.lastInteraction >= settings.timeoutMinutes * 60000)
       this.show();
   },
@@ -249,6 +254,14 @@ export const AmbientMode = {
     this.showing = true;
     if (Platform.isWebOS())
       WebOSPlayerExtensions.startAmbientKeepAwake(() => this.showing && !document.hidden);
+    // On a Tizen 5 set the slide animations advanced but were only seen on
+    // screen while something kept requesting frames, so Ambient Mode does.
+    if (Platform.isTizen() && typeof requestAnimationFrame === "function") {
+      const keepPresenting = () => {
+        if (this.showing) requestAnimationFrame(keepPresenting);
+      };
+      requestAnimationFrame(keepPresenting);
+    }
     const screen = Router.getCurrentScreen?.();
     screen?.stopTrailerPlayback?.();
     screen?.cancelFocusedPosterFlow?.();
