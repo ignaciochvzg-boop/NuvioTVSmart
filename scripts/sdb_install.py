@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Installs a signed .wgt on a Samsung TV in Developer Mode over Wi-Fi, without Samsung's sdb.
 
-    python scripts/sdb_install.py <IP> [--uninstall]
+    python scripts/sdb_install.py <IP> [--uninstall] [--wgt <file.wgt>]
 
 Speaks the SDB wire protocol (Samsung's ADB, port 26101) itself, so it needs only
 Python 3: no Tizen Studio at runtime. It pushes the package to the folder the TV
@@ -16,7 +16,9 @@ inside the wgt): the TV only installs signed apps.
 Usage:
     python scripts/sdb_install.py 192.168.1.77
     python scripts/sdb_install.py 192.168.1.77 --uninstall
+    python scripts/sdb_install.py 192.168.1.77 --wgt NuvioTV001_1.4.1.wgt
 """
+import glob
 import os
 import re
 import socket
@@ -26,9 +28,25 @@ import time
 import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-WGT = os.path.join(ROOT, "NuvioTV001_1.3.7.wgt")
 PORT = 26101
 MAX_DATA = 4096  # what this side announces; sdbd keeps each packet within both sides' maximum
+
+
+def find_wgt(arg):
+    """The package to install: --wgt <file>, else the newest NuvioTV001_*.wgt."""
+    if arg:
+        path = os.path.join(ROOT, arg) if not os.path.isabs(arg) else arg
+        if not os.path.exists(path):
+            sys.exit("Package not found: " + path)
+        return path
+    candidates = [
+        p
+        for p in glob.glob(os.path.join(ROOT, "NuvioTV001_*.wgt"))
+        if not os.path.basename(p).endswith(".unsigned.bak.wgt")
+    ]
+    if not candidates:
+        sys.exit("No NuvioTV001_*.wgt found in " + ROOT)
+    return max(candidates, key=os.path.getmtime)
 
 
 class Sdb:
@@ -150,14 +168,23 @@ def this_computer(ip):
 
 
 def main():
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    rest = list(sys.argv[1:])
+    wgt_arg = None
+    if "--wgt" in rest:
+        i = rest.index("--wgt")
+        if i + 1 >= len(rest):
+            sys.exit("--wgt needs a file name")
+        wgt_arg = rest[i + 1]
+        del rest[i : i + 2]
+    args = [a for a in rest if not a.startswith("--")]
     if len(args) != 1:
         sys.exit(__doc__)
     ip = args[0]
-    uninstall = "--uninstall" in sys.argv
-    if not os.path.exists(WGT):
-        sys.exit("Package not found: " + WGT)
-    with zipfile.ZipFile(WGT) as z:
+    uninstall = "--uninstall" in rest
+    wgt = find_wgt(wgt_arg)
+    if not os.path.exists(wgt):
+        sys.exit("Package not found: " + wgt)
+    with zipfile.ZipFile(wgt) as z:
         if "author-signature.xml" not in z.namelist():
             sys.exit(
                 "The package isn't signed, and the TV only installs signed apps. "
@@ -210,8 +237,8 @@ def main():
         if caps.get("platform_version", "").startswith("2.")
         else "/home/owner/share/tmp/sdk_tools"
     )
-    remote = caps.get("sdk_toolpath", default_path).rstrip("/") + "/NuvioTV001_1.3.7.wgt"
-    with open(WGT, "rb") as f:
+    remote = caps.get("sdk_toolpath", default_path).rstrip("/") + "/" + os.path.basename(wgt)
+    with open(wgt, "rb") as f:
         data = f.read()
     print("Copying the app to the TV (%d KB) ..." % (len(data) // 1024))
     sdb.push(remote, data)
