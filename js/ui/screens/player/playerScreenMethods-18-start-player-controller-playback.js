@@ -1,4 +1,6 @@
 import { saveReusableStreamLink } from "../../../core/streams/streamLinkReuse.js";
+import { toSafePlaybackUrl } from "../../../core/player/playbackUrlPolicy.js";
+import { beginPlaybackProbe } from "../../../core/player/playbackProbe.js";
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerScreenContext.js";
 
@@ -31,6 +33,39 @@ export function createPlayerScreenMethods18() {
         });
         return Promise.resolve();
       }
+      // AVPlay terminates the whole app process on schemes it cannot open and
+      // on links it cannot parse (unescaped spaces/non-ASCII), outside any
+      // try/catch. Reject those here with a visible error instead of a crash;
+      // http(s) links are also re-serialized so the native player only ever
+      // receives percent-encoded URLs.
+      const safeUrl = toSafePlaybackUrl(playbackUrl);
+      if (!safeUrl) {
+        console.warn("Playback URL blocked before start", { url: playbackUrl.slice(0, 200) });
+        this.markPlaybackSourceFailed(playbackUrl);
+        const unsupportedMessage = t(
+          "player_error_unsupported_url",
+          {},
+          "This source returned a link this TV cannot play. Try another source."
+        );
+        if (this.hasPresentedPlaybackFrame) {
+          this.sourcesError = this.formatPlaybackErrorForSources(unsupportedMessage, {
+            streamCandidate: sourceCandidate,
+            playbackUrl,
+            reason: "unsupported-url"
+          });
+          this.renderSourcesPanel();
+        } else {
+          this.showStartupError(unsupportedMessage, {
+            streamCandidate: sourceCandidate,
+            playbackUrl,
+            reason: "unsupported-url"
+          });
+        }
+        return Promise.resolve();
+      }
+      // Crash breadcrumb: if the native player still takes the process down,
+      // the next launch reports which URL was being played.
+      beginPlaybackProbe(playbackUrl);
       // Keep the candidate as a defensive source of truth. A route can be
       // rebuilt with a context that no longer contains requestHeaders, while
       // the plugin metadata is still present on the selected stream.
@@ -43,7 +78,7 @@ export function createPlayerScreenMethods18() {
       };
       saveReusableStreamLink(this, sourceCandidate || this.getCurrentStreamCandidate(), { url: playbackUrl, headers: requestHeaders });
       PlayerController.setStartupPresentationAudioMuted?.(true);
-      return Promise.resolve(PlayerController.play(playbackUrl, playbackContext)).catch((error) => {
+      return Promise.resolve(PlayerController.play(safeUrl, playbackContext)).catch((error) => {
         if (!this.isActiveMountToken(mountToken) || this.isExternalFrameMode()) {
           return;
         }

@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerScreenContext.js";
+import { markPlaybackProbePresented } from "../../../core/player/playbackProbe.js";
 
 export function createPlayerScreenMethods30() {
   const {
@@ -120,6 +121,7 @@ export function createPlayerScreenMethods30() {
         return false;
       }
       this.hasPresentedPlaybackFrame = true;
+      markPlaybackProbePresented();
       const currentStream = this.getCurrentStreamCandidate?.() || null;
       // Only a confirmed first frame counts as a plugin provider play, with the
       // group+identity dedupe Android uses.

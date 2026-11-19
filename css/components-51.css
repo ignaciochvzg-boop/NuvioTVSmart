@@ -51,6 +51,33 @@
   color: var(--text-tertiary);
 }
 
+/* Measured source answer time: green under 2s, amber under 5s, red beyond. */
+.stream-route-stream-badge.speed.fast {
+  border-color: rgba(0, 183, 79, 0.45);
+  background: rgba(0, 183, 79, 0.16);
+  color: #4ade80;
+}
+
+.stream-route-stream-badge.speed.ok {
+  border-color: rgba(251, 188, 5, 0.4);
+  background: rgba(251, 188, 5, 0.13);
+  color: #facc15;
+}
+
+.stream-route-stream-badge.speed.slow {
+  border-color: rgba(248, 113, 113, 0.4);
+  background: rgba(248, 113, 113, 0.13);
+  color: #f87171;
+}
+
+.stream-route-stream-badge.recommended {
+  border-color: rgba(74, 222, 128, 0.55);
+  background: rgba(74, 222, 128, 0.2);
+  color: #7ee787;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+}
+
 .stream-route-card-line {
   margin-top: 8px;
   font-size: 24px;

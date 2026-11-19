@@ -1,8 +1,17 @@
 import { newerServerResume } from "../../../data/mediaserver/mediaServerUserState.js";
 import { WatchProgressStore } from "../../../data/local/watchProgressStore.js";
 import { MediaServerRepository, canResolveMediaServerStream } from "../../../data/mediaserver/mediaServerRepository.js";
+import { getStreamUrlExpiryTimestampMs } from "../../../core/player/hlsNetworkErrorPolicy.js";
+import { invalidateResolvedStreamCache } from "../../../core/debrid/directDebridResolver.js";
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerScreenContext.js";
+
+// Signed stream links typically live ~15 minutes from resolution. Check every
+// 5 minutes and re-resolve + resume BEFORE the signature dies so playback
+// never reaches a cut. Links without a detectable TTL are covered by the
+// reactive recovery in showExpiredStreamError.
+const STREAM_URL_REFRESH_TICK_MS = 5 * 60 * 1000;
+const STREAM_URL_REFRESH_LEAD_MS = 5 * 60 * 1000;
 
 export function createPlayerScreenMethods35() {
   const {
@@ -14,7 +23,9 @@ export function createPlayerScreenMethods35() {
     logEngineFsDebug,
     getP2pInfoHash,
     t,
-    streamDirectPlaybackUrl
+    streamDirectPlaybackUrl,
+    flattenStreamGroups,
+    normalizeItemType
   } = internals;
 
   return {
@@ -37,6 +48,242 @@ export function createPlayerScreenMethods35() {
         mountToken: this.playerMountToken
       });
       return true;
+    },
+    /**
+     * Re-resolve the current stream and resume at the same position. Used
+     * reactively when a signed URL dies mid-playback and proactively by the
+     * 5-minute refresh ticker before it dies. Returns true once a
+     * replacement attempt has been started for this URL.
+     */
+    async recoverExpiredStreamPlayback({
+      playbackUrl = "",
+      sourceCandidate = null,
+      reason = "stream-url-expired",
+      markFailed = true
+    } = {}) {
+      const urlKey = String(playbackUrl || this.activePlaybackUrl || "").trim();
+      if (!urlKey || !this.playerRouteActive) {
+        return false;
+      }
+      // Collapse concurrent error events for the same player into one attempt.
+      if (this.expiredStreamRecoveryInFlight) {
+        return false;
+      }
+      // Sliding retry budget: at most 3 attempts per 3-minute window. The
+      // window refills on its own, so a 2-3 hour movie never runs out of
+      // recoveries (each 5-minute proactive tick lands in a fresh window),
+      // while a burst of failures for the same dead link still terminates
+      // in the sources panel instead of looping.
+      const recoveryNow = Date.now();
+      if (recoveryNow - Number(this.expiredStreamRecoveryWindowAt || 0) > 3 * 60 * 1000) {
+        this.expiredStreamRecoveryWindowAt = recoveryNow;
+        this.expiredStreamRecoveryAttempts = 0;
+      }
+      if (Number(this.expiredStreamRecoveryAttempts || 0) >= 3) {
+        return false;
+      }
+      const candidate = sourceCandidate || this.getStreamCandidateByUrl(urlKey) || this.getCurrentStreamCandidate();
+      if (!candidate) {
+        return false;
+      }
+      this.expiredStreamRecoveryInFlight = true;
+      this.expiredStreamRecoveryAttempts = Number(this.expiredStreamRecoveryAttempts || 0) + 1;
+      try {
+        // Capture the position before the engine state is torn down; the
+        // reopen consumes pendingPlaybackRestore on the next prepared event.
+        const resumeSeconds = Math.max(
+          Number(this.getPlaybackCurrentSeconds()) || 0,
+          Number(this.lastStablePlaybackSeconds) || 0
+        );
+        if (resumeSeconds > 1) {
+          this.pendingPlaybackRestore = {
+            timeSeconds: resumeSeconds,
+            paused: Boolean(this.paused),
+            attempts: 0,
+            lastAttemptAt: 0
+          };
+        }
+        if (markFailed) {
+          this.markPlaybackSourceFailed(urlKey, candidate);
+        }
+        const mountToken = this.playerMountToken;
+        const fresh = await this.resolveFreshStreamCandidate(candidate, urlKey);
+        if (!fresh || !this.isActiveMountToken(mountToken)) {
+          return false;
+        }
+        console.warn("Re-resolving stream URL before it cuts playback", {
+          reason,
+          resumeSeconds,
+          streamId: String(fresh.id || "")
+        });
+        // playStreamByUrl only resets engine validation when it drops the
+        // presented frame; preserving the frame above means the new link has
+        // to re-prove itself here instead.
+        this.resetPlaybackEngineValidation();
+        await this.playStreamCandidate(fresh, {
+          preservePlaybackState: true,
+          // Mid-playback recovery must not drop back to the startup overlay:
+          // keeping the presented frame shows the buffering spinner instead,
+          // so the picture never "closes" while the fresh link is prepared.
+          // (Startups pass hasPresentedPlaybackFrame=false and behave as before.)
+          preservePlaybackRecoveryState: this.hasPresentedPlaybackFrame === true,
+          mountToken
+        });
+        return this.isActiveMountToken(mountToken);
+      } catch (error) {
+        console.warn("Stream URL recovery failed", { reason, error });
+        return false;
+      } finally {
+        this.expiredStreamRecoveryInFlight = false;
+      }
+    },
+    /**
+     * Produce a playable candidate whose locator is not the expired one:
+     * resolvable streams (debrid/P2P/media server) re-run their resolver
+     * after their stale URL and resolve cache are dropped; plain addon links
+     * need a force-refreshed stream list because only the addon can mint a
+     * fresh signed URL.
+     */
+    async resolveFreshStreamCandidate(candidate, expiredUrl = "") {
+      const resolveContext = {
+        season: this.params?.season == null ? null : Number(this.params.season),
+        episode: this.params?.episode == null ? null : Number(this.params.episode)
+      };
+      const resolvable =
+        canResolveMediaServerStream(candidate) ||
+        DirectDebridResolver.canResolveStream(candidate, resolveContext) ||
+        WebOsEngineFsResolver.canResolveStream(candidate) ||
+        TizenStreamingServerResolver.canResolveStream(candidate);
+      if (resolvable) {
+        // Drop the dead locator so playStreamCandidate re-runs resolution
+        // instead of short-circuiting on the expired URL.
+        if (/^https?:\/\//i.test(String(candidate.url || ""))) {
+          candidate.url = "";
+        }
+        if (/^https?:\/\//i.test(String(candidate.externalUrl || ""))) {
+          candidate.externalUrl = null;
+        }
+        invalidateResolvedStreamCache(candidate, resolveContext);
+        return candidate;
+      }
+      const type = normalizeItemType(this.params?.itemType || "movie");
+      const videoId = String(this.params?.videoId || this.params?.itemId || "");
+      if (!videoId) {
+        return null;
+      }
+      const result = await streamRepository.getStreamsFromAllAddons(type, videoId, {
+        itemId: String(this.params?.itemId || ""),
+        season: this.params?.season ?? null,
+        episode: this.params?.episode ?? null,
+        forceRefresh: true
+      });
+      const fresh = this.findEquivalentStreamCandidate(flattenStreamGroups(result), candidate, expiredUrl);
+      if (!fresh) {
+        return null;
+      }
+      const index = this.streamCandidates.findIndex(
+        (entry) => entry === candidate || (entry.id && candidate.id && String(entry.id) === String(candidate.id))
+      );
+      if (index >= 0) {
+        this.streamCandidates = this.streamCandidates.map((entry, i) => (i === index ? { ...entry, ...fresh } : entry));
+        this.currentStreamIndex = index;
+        return this.streamCandidates[index];
+      }
+      this.streamCandidates = [...this.streamCandidates, fresh];
+      this.currentStreamIndex = this.streamCandidates.length - 1;
+      return fresh;
+    },
+    findEquivalentStreamCandidate(items = [], previous = {}, expiredUrl = "") {
+      if (!Array.isArray(items) || !items.length) {
+        return null;
+      }
+      const expiredKey = String(expiredUrl || "").trim();
+      const isDead = (item) => {
+        const url = String(item?.url || item?.externalUrl || "").trim();
+        return Boolean(expiredKey && url === expiredKey);
+      };
+      const prevId = String(previous.id || "").trim();
+      if (prevId) {
+        const byId = items.find((item) => String(item?.id || "").trim() === prevId && !isDead(item));
+        if (byId) {
+          return byId;
+        }
+      }
+      const prevAddon = String(previous.addonName || "").trim();
+      const prevLabel = String(previous.label || "").trim();
+      const prevFilename = String(
+        previous.behaviorHints?.filename || previous.raw?.behaviorHints?.filename || ""
+      ).trim();
+      if (prevAddon && (prevLabel || prevFilename)) {
+        const byIdentity = items.find((item) => {
+          if (isDead(item) || String(item?.addonName || "").trim() !== prevAddon) {
+            return false;
+          }
+          const labelMatches = prevLabel ? String(item?.label || "").trim() === prevLabel : true;
+          const filenameMatches = prevFilename
+            ? String(item?.behaviorHints?.filename || item?.raw?.behaviorHints?.filename || "").trim() === prevFilename
+            : true;
+          return labelMatches && filenameMatches;
+        });
+        if (byIdentity) {
+          return byIdentity;
+        }
+      }
+      return null;
+    },
+    startStreamUrlRefreshTicker() {
+      this.stopStreamUrlRefreshTicker();
+      this.streamUrlRefreshTimer = setInterval(() => {
+        void this.refreshExpiringStreamUrl();
+      }, STREAM_URL_REFRESH_TICK_MS);
+    },
+    stopStreamUrlRefreshTicker() {
+      if (this.streamUrlRefreshTimer) {
+        clearInterval(this.streamUrlRefreshTimer);
+        this.streamUrlRefreshTimer = null;
+      }
+    },
+    /**
+     * Proactive cut avoidance: while the active URL still has a detectable
+     * TTL and less than the lead window left, re-resolve it and resume in
+     * place. The5-minute tick means a link never reaches its expiry during
+     * playback, so the cut never happens.
+     */
+    async refreshExpiringStreamUrl() {
+      if (!this.playerRouteActive || !this.activePlaybackUrl || !this.hasPresentedPlaybackFrame || this.paused) {
+        return;
+      }
+      if (this.expiredStreamRecoveryInFlight || this.streamUrlRefreshInFlight) {
+        return;
+      }
+      const expiryMs = getStreamUrlExpiryTimestampMs(this.activePlaybackUrl);
+      if (!expiryMs) {
+        // No detectable TTL: the reactive recovery path covers this link if
+        // it turns out to die mid-playback.
+        return;
+      }
+      const remainingMs = expiryMs - Date.now();
+      if (remainingMs > STREAM_URL_REFRESH_LEAD_MS || remainingMs <= 0) {
+        // Still enough life for the next tick; already dead paths go through
+        // the error handler, which recovers with the same helper.
+        return;
+      }
+      this.streamUrlRefreshInFlight = true;
+      try {
+        const sourceCandidate = this.getStreamCandidateByUrl(this.activePlaybackUrl) || this.getCurrentStreamCandidate();
+        const resumed = await this.recoverExpiredStreamPlayback({
+          playbackUrl: this.activePlaybackUrl,
+          sourceCandidate,
+          reason: "stream-url-proactive-refresh",
+          markFailed: false
+        });
+        console.warn("Proactive stream URL refresh", {
+          remainingSeconds: Math.round(remainingMs / 1000),
+          resumed
+        });
+      } finally {
+        this.streamUrlRefreshInFlight = false;
+      }
     },
     async playStreamCandidate(streamCandidate, options = {}) {
       const mountToken = options?.mountToken ?? null;

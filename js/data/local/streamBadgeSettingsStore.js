@@ -13,6 +13,7 @@ const DEFAULT_STREAM_BADGE_SETTINGS = {
   rules: { imports: [] },
   showFileSizeBadges: true,
   showAddonLogo: true,
+  showSourceSpeedBadges: true,
   badgePlacement: "BOTTOM",
   showInPlayer: false,
   playerBadgeSource: ""
@@ -36,6 +37,7 @@ function normalizeStreamBadgeSettings(value = {}) {
     null;
   const showFileSizeBadges = source.showFileSizeBadges ?? source.show_file_size_badges;
   const showAddonLogo = source.showAddonLogo ?? source.show_addon_logo;
+  const showSourceSpeedBadges = source.showSourceSpeedBadges ?? source.show_source_speed_badges;
   const badgePlacement =
     source.badgePlacement ??
     source.badge_placement ??
@@ -45,6 +47,7 @@ function normalizeStreamBadgeSettings(value = {}) {
     rules: normalizeStreamBadgeRules(rulesSource),
     showFileSizeBadges: showFileSizeBadges !== false,
     showAddonLogo: showAddonLogo !== false,
+    showSourceSpeedBadges: showSourceSpeedBadges !== false,
     badgePlacement: normalizeBadgePlacement(badgePlacement),
     showInPlayer: (source.showInPlayer ?? source.show_badges_in_player) === true,
     playerBadgeSource: String(source.playerBadgeSource ?? source.player_badge_source ?? "").trim()
@@ -203,6 +206,10 @@ export const StreamBadgeSettingsStore = {
 
   setShowAddonLogo(enabled) {
     store.set({ showAddonLogo: Boolean(enabled) });
+  },
+
+  setShowSourceSpeedBadges(enabled) {
+    store.set({ showSourceSpeedBadges: Boolean(enabled) });
   },
 
   setBadgePlacement(placement) {

@@ -2212,6 +2212,9 @@
     <string name="settings_fusion_badge_other_group_title">Otras etiquetas Fusion</string>
     <string name="stream_badge_qr_instruction">Escanea este código QR con tu teléfono para administrar las URLs de etiquetas Fusion.</string>
     <string name="streams_size">TAMAÑO %1$s</string>
+    <string name="streams_recommended">RECOMENDADA</string>
+    <string name="settings_stream_speed_badges_title">Etiquetas de velocidad de fuente</string>
+    <string name="settings_stream_speed_badges_description">Muestra qué tan rápido respondió cada fuente y marca como recomendada las fuentes rápidas listas para reproducir.</string>
     <string name="action_import">Importar</string>
     <string name="action_delete">Eliminar</string>
     <string name="tmdb_modern_home_title">Habilitar en inicio moderno</string>
@@ -3186,6 +3189,9 @@ Utilizas esta función bajo tu entera responsabilidad. P2P se puede desactivar e
     <string name="server_options_login_with_email">Iniciar sesión con el correo electrónico</string>
     <string name="plugin_disable">Deshabilitar</string>
     <string name="player_error_p2p_disabled">La transmisión P2P está desactivada. Activa la opción P2P en «Configuración» para reproducir transmisiones de torrents.</string>
+    <string name="player_error_unsupported_url">Esta fuente devolvió un enlace que este televisor no puede reproducir. Prueba con otra fuente.</string>
+    <string name="crash_notice_playback">Nuvio se cerró inesperadamente durante el último intento de reproducción (%1$s). Este aviso ayuda a diagnosticar el cierre.</string>
+    <string name="crash_notice_title">Se detectó un cierre inesperado</string>
     <string name="sub_mode_overlay_canvas_sub">Compatibilidad con HDR mediante renderizado en lienzo. Puede bloquear el hilo de la interfaz de usuario.</string>
     <string name="cd_membership_qr">Código QR de la página de membresía</string>
     <string name="torrent_error_add_failed">No se ha podido añadir el torrent</string>

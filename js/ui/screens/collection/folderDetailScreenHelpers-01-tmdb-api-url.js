@@ -51,9 +51,9 @@ import { renderLoadingIndicator } from "../../components/loadingIndicator.js";
 
 export const TMDB_API_URL = "https://api.themoviedb.org/3";
 
-export const TMDB_POSTER_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w342";
+export const TMDB_POSTER_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w154";
 
-export const TMDB_BACKDROP_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w780";
+export const TMDB_BACKDROP_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w300";
 
 export const TRAKT_PAGE_SIZE = 50;
 

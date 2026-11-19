@@ -277,7 +277,7 @@ async function incrementalSync(current, profileId) {
 function posterUrl(media = {}) {
   const path = String(media.poster || "").replace(/^\/+|\/+$/g, "");
   return path
-    ? `https://wsrv.nl/?url=${encodeURIComponent(`https://simkl.in/posters/${path}_ca.webp`)}&q=90`
+    ? `https://wsrv.nl/?url=${encodeURIComponent(`https://simkl.in/posters/${path}_ca.webp`)}&w=185&q=70`
     : null;
 }
 

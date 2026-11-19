@@ -5,7 +5,16 @@ const STREAM_EXPIRY_QUERY_KEYS = new Set([
   "expires_at",
   "expiresat",
   "expiration",
-  "expiry"
+  "expiry",
+  // Signed-link params the original set missed (JWT `exp`, CDN `deadline`,
+  // ...): without them an expired link fell through to a generic playback
+  // error instead of the expiry recovery path.
+  "exp",
+  "deadline",
+  "expires_unix",
+  "expire_time",
+  "valid_until",
+  "x-expire"
 ]);
 const MIN_EPOCH_TIMESTAMP_MS = Date.UTC(2000, 0, 1);
 

@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerScreenContext.js";
+import { clearPlaybackProbe } from "../../../core/player/playbackProbe.js";
 
 export function createPlayerScreenMethods73() {
   const { PlayerController, streamRepository, TrackingScrobbleService, ENGINEFS_NAVIGATION_CLEANUP_GRACE_MS } = internals;
@@ -93,6 +94,12 @@ export function createPlayerScreenMethods73() {
         this.hlsManifestSubtitlePromotionUrls?.clear?.();
         this.failedPlaybackUrls?.clear?.();
         this.failedPlaybackStreamIds?.clear?.();
+        this.stopStreamUrlRefreshTicker();
+        this.expiredStreamRecoveryInFlight = false;
+        this.streamUrlRefreshInFlight = false;
+        this.expiredStreamRecoveryAttempts = 0;
+        this.expiredStreamRecoveryWindowAt = 0;
+        this.lastStablePlaybackSeconds = 0;
         this.skipIntervalsRequestToken = Number(this.skipIntervalsRequestToken || 0) + 1;
         this.subtitleLoadToken = (this.subtitleLoadToken || 0) + 1;
         this.subtitleSelectionToken = Number(this.subtitleSelectionToken || 0) + 1;
@@ -212,6 +219,9 @@ export function createPlayerScreenMethods73() {
         try {
           PlayerController.stop();
         } catch (_) {}
+        // Clean player exit: drop the crash breadcrumb so only an abrupt
+        // process death is reported on the next launch.
+        clearPlaybackProbe();
         try {
           if (this.container) {
             this.container.style.display = "none";

@@ -7,7 +7,7 @@ import {
   isRescalableArtworkFit
 } from "../../images/tvPosterRescaler.js";
 import { getTvArtworkPixelRatio } from "../../../platform/tvRuntimePerformance.js";
-import { getArtworkEvictIdleMs, getArtworkEvictMarginPx, getDeviceMemoryGb } from "../../../platform/tvPerformancePolicy.js";
+import { getArtworkEvictIdleMs, getArtworkEvictMarginPx, getDeviceMemoryGb, isLowMemoryDevice } from "../../../platform/tvPerformancePolicy.js";
 
 // Temporary lazy-hydration diagnostics. Enabled at runtime from the Web
 // Inspector with window.__NUVIO_DEBUG_LAZY__ = true (checked at call time so
@@ -410,14 +410,21 @@ export function createHomeScreenMethods24() {
       });
     },
     scheduleHomeLazyImageEviction(anchorNode = null) {
-      const idleMs = getArtworkEvictIdleMs(getTvRuntimePerformanceProfile(), getDeviceMemoryGb());
+      const deviceMemory = getDeviceMemoryGb();
+      // A sweep walks the whole artwork index synchronously, so running it on
+      // every keypress steals frames from navigation on legacy TVs. Coalesce
+      // it into one scan shortly after input settles; only critical-RAM sets
+      // (<=1 GB) must free eagerly. A held D-pad still forces a sweep at
+      // least every 4s through the max timer below.
+      const idleMs = isLowMemoryDevice(deviceMemory)
+        ? 0
+        : Math.max(getArtworkEvictIdleMs(getTvRuntimePerformanceProfile(), deviceMemory), 250);
       if (idleMs <= 0) {
         this.evictDistantHomeLazyImages(anchorNode);
         return;
       }
-      // Modern TVs keep artwork while the viewer is still moving; releasing a
-      // row and then focusing back up pays a fetch and a decode again. The
-      // constrained generations keep the immediate sweep above.
+      // Artwork stays while the viewer is still moving; releasing a row and
+      // then focusing back up pays a fetch and a decode again.
       if (this.homeLazyImageEvictTimer) {
         clearTimeout(this.homeLazyImageEvictTimer);
       }

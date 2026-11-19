@@ -129,6 +129,45 @@
   text-align: center;
 }
 
+/* Playback crash notice — one-shot dialog reporting an abrupt process death
+   during the previous session (AVPlay can kill the app outside try/catch). */
+
+.nuvio-dialog-panel.playback-crash-notice-dialog {
+  border-color: var(--focus-color, #ffffff);
+  gap: 24px;
+}
+
+.playback-crash-notice-dialog .nuvio-dialog-title {
+  font-weight: 700;
+}
+
+.playback-crash-notice-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.playback-crash-notice-message {
+  color: #b3b3b3;
+  font-size: 26px;
+  line-height: 1.5;
+}
+
+.playback-crash-notice-url {
+  max-height: min(30vh, 320px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 16px 20px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.035);
+  color: #ffffff;
+  font-size: 22px;
+  line-height: 1.45;
+  word-break: break-all;
+  scrollbar-width: thin;
+  scrollbar-color: var(--focus-color, #f5f5f5) transparent;
+}
+
 /* Actions column — gap=16dp=32px */
 
 .nuvio-dialog-actions {

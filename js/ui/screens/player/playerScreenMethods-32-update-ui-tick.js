@@ -1,6 +1,7 @@
 import { syncPlayerPlaybackBadges } from "./playerPlaybackBadges.js";
 import { syncHtmlSubtitleClearance } from "./subtitleOverlayClearance.js";
 import { MediaServerScrobbleService } from "../../../data/mediaserver/mediaServerScrobbleService.js";
+import { touchPlaybackProbe } from "../../../core/player/playbackProbe.js";
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerScreenContext.js";
 
@@ -89,6 +90,14 @@ export function createPlayerScreenMethods32() {
       this.shouldShowNextEpisodeCard();
       void this.refreshLoadingOverlayProgress();
       const current = this.getPlaybackCurrentSeconds();
+      // Last known-good position for expired-URL recovery: after an engine
+      // error the live read can return 0, which would resume at the start.
+      if (current > 1) {
+        this.lastStablePlaybackSeconds = current;
+      }
+      // Crash breadcrumb heartbeat (self-throttled): lets the next launch
+      // tell a mid-playback process death apart from a clean exit.
+      touchPlaybackProbe();
       this.updateActiveSkipInterval(current);
       this.updateSkipIntroCountdown(Date.now());
       const displayCurrent = this.getPlaybackDisplayCurrentSeconds();

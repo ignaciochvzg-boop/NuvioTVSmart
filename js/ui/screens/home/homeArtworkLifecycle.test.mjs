@@ -48,7 +48,8 @@ function buildHome({ rescale = null, tv = true, route = "home", constants = {} }
     isRescalableArtworkFit: (fit) => fit === "cover" || fit === "fill",
     getArtworkEvictIdleMs: () => 0,
     getArtworkEvictMarginPx: () => 1600,
-    getDeviceMemoryGb: () => 0
+    getDeviceMemoryGb: () => 0,
+    isLowMemoryDevice: (memory = 0) => memory > 0 && memory <= 1
   });
   context.globalThis = context;
   context.innerWidth = 1920;

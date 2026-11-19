@@ -2,6 +2,8 @@ export { Router } from "../../navigation/routerState.js";
 
 export { ScreenUtils } from "../../navigation/screen.js";
 
+export { allowDpadRepeat } from "../../navigation/dpadRepeatThrottle.js";
+
 export { addonRepository } from "../../../data/repository/addonRepository.js";
 
 export { LocalStore } from "../../../core/storage/localStore.js";

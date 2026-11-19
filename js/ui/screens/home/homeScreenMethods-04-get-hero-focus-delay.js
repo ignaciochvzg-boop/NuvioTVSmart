@@ -113,7 +113,12 @@ export function createHomeScreenMethods04() {
   return {
     getHeroFocusDelay({ rapid = false } = {}) {
       if (this.isLegacyTvRuntime()) {
-        return rapid ? 260 : 150;
+        // On a legacy TV a single press must feel like the hero moves with
+        // the focus: commit the catalog preview in the same frame batch (the
+        // identity short-circuit skips redundant commits). Held-button
+        // scrolling keeps a short settle so intermediate posters are not all
+        // fetched over the network.
+        return rapid ? 150 : 0;
       }
       return rapid ? MODERN_HOME_CONSTANTS.heroRapidSettleMs : MODERN_HOME_CONSTANTS.heroFocusDelayMs;
     },
@@ -207,7 +212,7 @@ export function createHomeScreenMethods04() {
       }
       // Tizen fast path: on constrained/legacy runtimes a full innerHTML
       // render mid-navigation steals frames and invalidates the nav model.
-      // Defer background renders until 800ms after the last D-pad press on
+      // Defer background renders until 500ms after the last D-pad press on
       // every layout, not just modern.
       try {
         const constrained =
@@ -215,7 +220,7 @@ export function createHomeScreenMethods04() {
           (typeof this.isLegacyTvRuntime === "function" && this.isLegacyTvRuntime()) ||
           globalThis?.document?.body?.classList?.contains("legacy-tizen") ||
           globalThis?.document?.documentElement?.classList?.contains("legacy-tizen");
-        if (constrained && Date.now() - Number(this.lastHomeInputAt || 0) < 800) {
+        if (constrained && Date.now() - Number(this.lastHomeInputAt || 0) < 500) {
           return true;
         }
       } catch (_) {}

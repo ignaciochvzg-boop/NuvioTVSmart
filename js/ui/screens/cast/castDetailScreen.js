@@ -32,6 +32,7 @@ export {
   renderLoadingIndicator,
   TMDB_BASE_URL,
   IMAGE_BASE_URL,
+  PROFILE_IMAGE_BASE_URL,
   POSTER_HOLD_DELAY_MS,
   t,
   escapeHtml,
@@ -44,7 +45,11 @@ export {
   uniqueCredits
 };
 const TMDB_BASE_URL = "https://api.themoviedb.org/3";
-const IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w780";
+// Credits posters paint at ~250px cards; w185 keeps them fast on engines that
+// decode every image on the main thread. Profile photos paint at 200-220px
+// avatars and take w185 (the smallest TMDB profile size above w45).
+const IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w185";
+const PROFILE_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w185";
 const POSTER_HOLD_DELAY_MS = 650;
 
 function t(key, params = {}, fallback = key) {
@@ -64,7 +69,7 @@ function escapeAttribute(value = "") {
   return escapeHtml(value);
 }
 
-function toImage(path) {
+function toImage(path, baseUrl = IMAGE_BASE_URL) {
   const value = String(path || "").trim();
   if (!value) {
     return "";
@@ -73,7 +78,7 @@ function toImage(path) {
     return value;
   }
   if (value.startsWith("/")) {
-    return `${IMAGE_BASE_URL}${value}`;
+    return `${baseUrl}${value}`;
   }
   return value;
 }

@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerController.js";
+import { toSafePlaybackUrl } from "./playbackUrlPolicy.js";
 
 export function createPlayerControllerMethods09() {
   const { Platform, logTizenAvPlayDebug, isTizenAvPlayDebugEnabled } = internals;
@@ -18,9 +19,20 @@ export function createPlayerControllerMethods09() {
         return false;
       }
 
+      // Last line of defense: whatever route produced this URL (addon link,
+      // redirect resolution, local proxy), AVPlay must never receive a scheme
+      // or byte sequence it cannot open — open() kills the process natively.
+      const safeUrl = toSafePlaybackUrl(url);
+      if (!safeUrl) {
+        console.warn("Playback URL blocked before AVPlay open", {
+          url: String(url || "").slice(0, 200)
+        });
+        return false;
+      }
+
       this.teardownAvPlay();
 
-      this.avplayUrl = String(url || "");
+      this.avplayUrl = safeUrl;
       this.avplayReady = false;
       this.avplayEnded = false;
       this.avplayCurrentTimeMs = 0;

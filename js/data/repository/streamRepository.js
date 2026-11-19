@@ -347,6 +347,9 @@ class StreamRepository {
         }
         const orderIndex = Number(addon.orderIndex ?? Number.MAX_SAFE_INTEGER);
         notifyAddon(addon, orderIndex);
+        // Answer time for this source: shown on stream cards so the viewer can
+        // tell which addon responded quickly before picking a stream.
+        const requestStartedAt = Date.now();
         let addonStreams = [];
         let streamRequestSucceeded = false;
         if (canStream) {
@@ -384,6 +387,7 @@ class StreamRepository {
         if (addonStreams.length === 0) {
           return null;
         }
+        const requestDurationMs = Date.now() - requestStartedAt;
 
         const group = {
           addonId: addon.id,
@@ -391,6 +395,7 @@ class StreamRepository {
           addonName: addon.displayName,
           addonLogo: addon.logo,
           addonOrderIndex: orderIndex,
+          requestDurationMs,
           streamOrigin: {
             kind: "addon",
             addonId: addon.id,
@@ -405,6 +410,7 @@ class StreamRepository {
             addonName: addon.displayName,
             addonLogo: addon.logo,
             addonOrderIndex: orderIndex,
+            requestDurationMs,
             streamOrigin: {
               ...(stream.streamOrigin || {}),
               kind: "addon",
@@ -475,6 +481,9 @@ class StreamRepository {
 
           const attemptController =
             typeof AbortController === "function" ? new AbortController() : null;
+          // Answer time for plugin sources: time from attempt start until the
+          // group arrives, the same metric the addon path stamps.
+          const attemptStartedAt = Date.now();
           const forwardSourceAbort = () => attemptController?.abort();
           options.signal?.addEventListener?.("abort", forwardSourceAbort, { once: true });
           if (attemptController) this.activePluginAttemptControllers.add(attemptController);
@@ -489,7 +498,10 @@ class StreamRepository {
                   attemptController?.signal.aborted
                 )
                   return;
-                const checked = await prepareDebridGroup(group, () => false, { present: false });
+                const stampedGroup = Number.isFinite(Number(group?.requestDurationMs))
+                  ? group
+                  : { ...group, requestDurationMs: Date.now() - attemptStartedAt };
+                const checked = await prepareDebridGroup(stampedGroup, () => false, { present: false });
                 if (
                   !acceptPluginChunks ||
                   this.localPluginSearchPaused ||
@@ -529,8 +541,11 @@ class StreamRepository {
             if (!progressivePluginGroups.length && acceptPluginChunks) {
               for (const group of pluginStreams) {
                 if (!acceptPluginChunks) return [];
+                const stampedGroup = Number.isFinite(Number(group?.requestDurationMs))
+                  ? group
+                  : { ...group, requestDurationMs: Date.now() - attemptStartedAt };
                 progressivePluginGroups.push(
-                  await prepareDebridGroup(group, () => acceptPluginChunks)
+                  await prepareDebridGroup(stampedGroup, () => acceptPluginChunks)
                 );
               }
             }

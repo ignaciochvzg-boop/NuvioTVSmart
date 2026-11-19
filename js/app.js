@@ -40,6 +40,8 @@ import { I18n } from "./i18n/index.js";
 import { getLatestAppUpdateWithRetry } from "./core/update/appUpdateService.js";
 import { shouldShowUpdate } from "./core/update/updateBannerPolicy.js";
 import { showAppUpdatePrompt } from "./ui/components/appUpdatePrompt.js";
+import { showPlaybackCrashNoticeIfNeeded } from "./ui/components/playbackCrashNotice.js";
+import { clearPlaybackProbe } from "./core/player/playbackProbe.js";
 import { resolveExperienceRoute } from "./core/profile/experienceModeRouting.js";
 import { PluginRuntime } from "./core/player/pluginRuntime.js";
 import { installPartyEffects } from "./ui/screens/party/partyEffects.js";
@@ -811,8 +813,19 @@ async function bootstrapApp() {
     warmStreamingLibs({ delayMs: 1400 });
   }
   runAfterFirstHomePaint(() => {
+    // Report a playback crash from the previous session before anything else
+    // competes for focus; the record is consumed inside, so this is one-shot.
+    try {
+      showPlaybackCrashNoticeIfNeeded();
+    } catch (error) {
+      console.warn("Playback crash notice failed", error);
+    }
     void checkForAppUpdateOnStartup();
   });
+  // A native AVPlay crash kills the process before any unload handler runs,
+  // while a clean exit does fire pagehide — so the breadcrumb only survives
+  // an abrupt process death and is reported on the next launch.
+  globalThis.addEventListener("pagehide", () => clearPlaybackProbe());
 
   markBootStage("Restoring session");
   DeviceSessionRegistration.start();

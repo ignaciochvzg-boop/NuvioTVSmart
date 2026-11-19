@@ -17,9 +17,9 @@ test("every screen gets the same bounded TMDB artwork as Home", () => {
     "poster",
     SETTINGS
   );
-  assert.equal(item.poster, "https://image.tmdb.org/t/p/w500/poster.jpg");
-  assert.equal(item.backdrop, "https://image.tmdb.org/t/p/w780/backdrop.jpg");
-  assert.equal(item.landscapePoster, "https://image.tmdb.org/t/p/w780/landscape.jpg");
+  assert.equal(item.poster, "https://image.tmdb.org/t/p/w185/poster.jpg");
+  assert.equal(item.backdrop, "https://image.tmdb.org/t/p/w300/backdrop.jpg");
+  assert.equal(item.landscapePoster, "https://image.tmdb.org/t/p/w300/landscape.jpg");
 });
 
 test("non-TMDB and custom poster URLs are left byte-for-byte unchanged", () => {
@@ -41,7 +41,7 @@ test("the custom-poster fallback keeps the bounded TMDB size too", () => {
   const attributes = posterFallbackAttributes({
     rawPosterUrl: "https://image.tmdb.org/t/p/original/fallback.jpg"
   });
-  assert.equal(attributes, ' data-original-poster="https://image.tmdb.org/t/p/w500/fallback.jpg"');
+  assert.equal(attributes, ' data-original-poster="https://image.tmdb.org/t/p/w185/fallback.jpg"');
 });
 
 test("a TV asks a resizing poster service for card-sized artwork, nobody else does", async () => {
@@ -65,11 +65,11 @@ test("a TV asks a resizing poster service for card-sized artwork, nobody else do
   globalThis.__NUVIO_PLATFORM__ = "tizen";
   Platform.current = null;
   try {
-    assert.match(poster(), /^https:\/\/easyposters\.realbestia\.com\/.*&w=(342|500)$/);
+    assert.match(poster(), /^https:\/\/easyposters\.realbestia\.com\/.*&w=(154|185)$/);
     assert.equal(poster(`${settings.customPosterUrlPattern}&w=800`), `${plain}&w=800`);
     assert.match(
       customPosterForItem({ id: "tt1", poster: plain }, "home", "poster", SETTINGS).poster,
-      /&w=(342|500)$/,
+      /&w=(154|185)$/,
       "a poster the addon itself took from the service is sized too"
     );
     assert.equal(

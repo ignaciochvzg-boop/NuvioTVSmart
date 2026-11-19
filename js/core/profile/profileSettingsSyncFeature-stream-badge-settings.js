@@ -100,6 +100,7 @@ export const stream_badge_settings = {
       stream_badge_rules: rules.imports.length ? JSON.stringify(rules) : "",
       show_file_size_badges: settings.showFileSizeBadges !== false,
       show_addon_logo: settings.showAddonLogo !== false,
+      show_source_speed_badges: settings.showSourceSpeedBadges !== false,
       show_badges_in_player: settings.showInPlayer === true,
       player_badge_source: settings.playerBadgeSource || "",
       stream_badge_placement: settings.badgePlacement === "TOP" ? "TOP" : "BOTTOM"
@@ -111,6 +112,7 @@ export const stream_badge_settings = {
     projected.stream_badge_rules = String(raw.stream_badge_rules || "").trim();
     projected.show_file_size_badges = booleanFromAnyKey(raw, ["show_file_size_badges"]) ?? true;
     projected.show_addon_logo = booleanFromAnyKey(raw, ["show_addon_logo"]) ?? true;
+    projected.show_source_speed_badges = booleanFromAnyKey(raw, ["show_source_speed_badges"]) ?? true;
     projected.show_badges_in_player = booleanFromAnyKey(raw, ["show_badges_in_player"]) ?? false;
     projected.player_badge_source = String(raw.player_badge_source || "").trim();
     projected.stream_badge_placement =
@@ -133,6 +135,9 @@ export const stream_badge_settings = {
     }
     if (booleanOrNull(raw.show_addon_logo) != null) {
       partial.showAddonLogo = Boolean(raw.show_addon_logo);
+    }
+    if (booleanOrNull(raw.show_source_speed_badges) != null) {
+      partial.showSourceSpeedBadges = Boolean(raw.show_source_speed_badges);
     }
     if (booleanOrNull(raw.show_badges_in_player) != null) partial.showInPlayer = Boolean(raw.show_badges_in_player);
     if (raw.player_badge_source != null) partial.playerBadgeSource = String(raw.player_badge_source).trim();

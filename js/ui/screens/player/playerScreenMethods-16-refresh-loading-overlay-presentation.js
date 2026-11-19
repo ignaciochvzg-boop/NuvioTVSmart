@@ -238,6 +238,41 @@ export function createPlayerScreenMethods16() {
       { sourceCandidate: explicitSourceCandidate = null, reason = "stream-url-expired" } = {}
     ) {
       const normalizedUrl = String(playbackUrl || "").trim();
+      const currentPlaybackUrl = String(this.activePlaybackUrl || "").trim();
+      const hasDifferentActivePlayback =
+        this.hasPresentedPlaybackFrame && normalizedUrl && currentPlaybackUrl !== normalizedUrl;
+      if (hasDifferentActivePlayback) {
+        // A user picked an expired source while another one still plays:
+        // keep the active playback untouched and only report the candidate.
+        this.presentExpiredStreamError(normalizedUrl, { sourceCandidate: explicitSourceCandidate, reason });
+        return;
+      }
+      this.clearPlaybackStallGuard();
+      this.releaseStartupAudioGate({ resume: false });
+      // Re-resolve the link and resume in place instead of dead-ending. Only
+      // when that fails (or was already attempted for this URL) does the
+      // error UI appear.
+      const sourceCandidate =
+        explicitSourceCandidate || this.getStreamCandidateByUrl(normalizedUrl) || this.getCurrentStreamCandidate();
+      void this.recoverExpiredStreamPlayback({
+        playbackUrl: normalizedUrl,
+        sourceCandidate,
+        reason
+      })
+        .then((recovered) => {
+          if (!recovered) {
+            this.presentExpiredStreamError(normalizedUrl, { sourceCandidate, reason });
+          }
+        })
+        .catch(() => {
+          this.presentExpiredStreamError(normalizedUrl, { sourceCandidate, reason });
+        });
+    },
+    presentExpiredStreamError(
+      playbackUrl = this.activePlaybackUrl,
+      { sourceCandidate: explicitSourceCandidate = null, reason = "stream-url-expired" } = {}
+    ) {
+      const normalizedUrl = String(playbackUrl || "").trim();
       const sourceCandidate = explicitSourceCandidate || this.getStreamCandidateByUrl(normalizedUrl) || this.getCurrentStreamCandidate();
       const message = t("player_error_stream_expired", {}, "The stream link has expired. Try a different source.");
       this.markPlaybackSourceFailed(normalizedUrl, sourceCandidate);
@@ -282,7 +317,7 @@ export function createPlayerScreenMethods16() {
         this.renderSourcesPanel();
       }
 
-      console.warn("Playback source URL has expired; refusing to retry it", {
+      console.warn("Playback source URL expired; automatic recovery did not restore it", {
         url: normalizedUrl,
         reason
       });

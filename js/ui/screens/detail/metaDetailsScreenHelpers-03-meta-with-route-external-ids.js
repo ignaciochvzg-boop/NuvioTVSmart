@@ -131,7 +131,7 @@ export function extractCast(meta = {}) {
       return raw;
     }
     if (raw.startsWith("/")) {
-      return `https://image.tmdb.org/t/p/w300${raw}`;
+      return `https://image.tmdb.org/t/p/w154${raw}`;
     }
     return toTraktImageUrl(raw);
   };

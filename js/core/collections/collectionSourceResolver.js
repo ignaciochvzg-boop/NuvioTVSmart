@@ -176,7 +176,7 @@ export const collectionSourceResolver = {
         originCountry: Array.isArray(result?.origin_country)
           ? result.origin_country.join(", ")
           : "",
-        logoUrl: tmdbImage(result?.logo_path, "w500")
+        logoUrl: tmdbImage(result?.logo_path, "w300")
       }))
       .filter((result) => Number(result.id) > 0 && result.name);
   },
@@ -196,7 +196,7 @@ export const collectionSourceResolver = {
         id: Number(result?.id),
         name: String(result?.name || "").trim(),
         posterUrl:
-          tmdbImage(result?.poster_path, "w500") || tmdbImage(result?.backdrop_path, "w780")
+          tmdbImage(result?.poster_path, "w185") || tmdbImage(result?.backdrop_path, "w300")
       }))
       .filter((result) => Number(result.id) > 0 && result.name);
   },
@@ -220,7 +220,7 @@ export const collectionSourceResolver = {
         ? {
             title: String(payload.name || "").trim() || null,
             coverImageUrl:
-              tmdbImage(payload.poster_path, "w500") || tmdbImage(payload.backdrop_path, "w780")
+              tmdbImage(payload.poster_path, "w185") || tmdbImage(payload.backdrop_path, "w300")
           }
         : null;
     }
@@ -229,7 +229,7 @@ export const collectionSourceResolver = {
       return payload
         ? {
             title: String(payload.name || "").trim() || null,
-            coverImageUrl: tmdbImage(payload.logo_path, "w500")
+            coverImageUrl: tmdbImage(payload.logo_path, "w300")
           }
         : null;
     }
@@ -238,7 +238,7 @@ export const collectionSourceResolver = {
       return payload
         ? {
             title: String(payload.name || "").trim() || null,
-            coverImageUrl: tmdbImage(payload.logo_path, "w500")
+            coverImageUrl: tmdbImage(payload.logo_path, "w300")
           }
         : null;
     }
@@ -247,7 +247,7 @@ export const collectionSourceResolver = {
       return payload
         ? {
             title: String(payload.name || "").trim() || null,
-            coverImageUrl: tmdbImage(payload.profile_path, "w500")
+            coverImageUrl: tmdbImage(payload.profile_path, "w185")
           }
         : null;
     }

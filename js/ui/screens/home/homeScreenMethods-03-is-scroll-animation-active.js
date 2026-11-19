@@ -306,7 +306,10 @@ export function createHomeScreenMethods03() {
           }
           this.scheduleModernHeroUpdate(target);
         },
-        this.isLegacyTvRuntime() ? 260 : 220
+        // Legacy TVs scroll the row instantly (nothing to settle), so the hero
+        // can follow the focused card in the same breath; the stale-target
+        // guard above already discards timers for cards that lost focus.
+        this.isLegacyTvRuntime() ? 0 : 220
       );
     },
     getBackgroundRenderDelay() {

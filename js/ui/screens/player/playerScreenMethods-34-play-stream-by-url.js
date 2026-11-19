@@ -154,21 +154,40 @@ export function createPlayerScreenMethods34() {
       }
       this.cancelSeekPreview({ commit: false });
       if (preservePlaybackState) {
-        const restoreTimeSeconds = this.getPlaybackCurrentSeconds();
+        const liveSeconds = this.getPlaybackCurrentSeconds();
+        const hasLivePosition = Number.isFinite(liveSeconds) && liveSeconds > 1;
+        // An engine error or teardown zeroes the live read even though the
+        // title was minutes in, and seeding the retry with that 0 restarted
+        // the video from the beginning. Fall back to the last known-good
+        // position (kept by updateUiTick while playback advanced) so a retry
+        // always resumes where it left off.
+        const stableSeconds = Number(this.lastStablePlaybackSeconds || 0);
+        const restoreTimeSeconds = hasLivePosition
+          ? liveSeconds
+          : Number.isFinite(stableSeconds) && stableSeconds > 1
+            ? stableSeconds
+            : liveSeconds;
         const video = PlayerController.video;
         const usingAvPlay = typeof PlayerController.isUsingAvPlay === "function" ? PlayerController.isUsingAvPlay() : false;
+        const pausedRequested = Boolean(this.paused || (!usingAvPlay && video?.paused));
         const hasExistingResumeRestore = Boolean(
           this.pendingPlaybackRestore &&
           (Number(this.pendingPlaybackRestore.timeSeconds || 0) > 1 || Number(this.pendingPlaybackRestore.progressPercent || 0) > 0)
         );
-        const hasUsefulCurrentPosition = Number.isFinite(restoreTimeSeconds) && restoreTimeSeconds > 1;
-        if (!(hasExistingResumeRestore && !hasUsefulCurrentPosition)) {
+        if (hasExistingResumeRestore && !hasLivePosition) {
+          // The resume position captured before the engine went away is more
+          // trustworthy than a live read that already reports 0.
+        } else if (restoreTimeSeconds > 1 || pausedRequested) {
           this.pendingPlaybackRestore = {
             timeSeconds: Number.isFinite(restoreTimeSeconds) ? restoreTimeSeconds : 0,
-            paused: Boolean(this.paused || (!usingAvPlay && video?.paused)),
+            paused: pausedRequested,
             attempts: 0,
             lastAttemptAt: 0
           };
+        } else {
+          // Nothing to restore: arming a 0-second restore would stall the
+          // startup presentation through eight fruitless seek attempts.
+          this.pendingPlaybackRestore = null;
         }
       } else if (!(preservePendingRestore && this.pendingPlaybackRestore)) {
         this.pendingPlaybackRestore = null;

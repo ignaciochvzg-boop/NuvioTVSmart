@@ -11,7 +11,8 @@ export function createSettingsScreenMethods14() {
     isSelectedSidebarAction,
     isRootSidebarNode,
     clamp,
-    isSettingsActivateEvent
+    isSettingsActivateEvent,
+    allowDpadRepeat
   } = internals;
 
   return {
@@ -150,6 +151,12 @@ export function createSettingsScreenMethods14() {
       }
 
       const code = Number(event?.keyCode || 0);
+      // Hold-repeat gate: remotes repeat a held key every ~50-100ms and each
+      // repeat can run a full Settings re-render or a focusable-rect sweep.
+      // The first press is never delayed; only repeats are throttled.
+      if (!allowDpadRepeat(this, event, { horizontalMs: 80, verticalMs: 112 })) {
+        return;
+      }
 
       if (this.textDialog) {
         const activeField = document.activeElement?.matches?.("[data-text-dialog-role='field']");

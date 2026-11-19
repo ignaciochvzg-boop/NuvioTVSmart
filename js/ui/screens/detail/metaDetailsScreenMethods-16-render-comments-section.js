@@ -451,7 +451,7 @@ export function createMetaDetailsScreenMethods16() {
           return value;
         }
         if (value.startsWith("/")) {
-          return `https://image.tmdb.org/t/p/w500${value}`;
+          return `https://image.tmdb.org/t/p/w92${value}`;
         }
         return value;
       };

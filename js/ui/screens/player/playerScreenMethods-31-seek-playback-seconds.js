@@ -10,6 +10,11 @@ export function createPlayerScreenMethods31() {
       if (this.isLivePlayback()) return false;
       const currentSeconds = Number(this.getPlaybackCurrentSeconds());
       const targetSeconds = Number(seconds);
+      if (Number.isFinite(targetSeconds) && targetSeconds <= 1) {
+        // Rewound to the start: forget the last known-good position so a
+        // later recovery cannot jump back to the old timestamp.
+        this.lastStablePlaybackSeconds = 0;
+      }
       if (Number.isFinite(currentSeconds) && Number.isFinite(targetSeconds) && targetSeconds < currentSeconds - 0.5) {
         this.resetNextEpisodeCardAfterBackwardSeek(targetSeconds);
       }

@@ -292,11 +292,35 @@
 }
 
 .detail-loading-shell {
+  position: relative;
   width: 100vw;
   height: 100vh;
   padding: 58px 56px;
   background: #05090f;
   color: #edf2f8;
+}
+
+/* Instant artwork from the card the user just selected: paints while the
+   metadata request is still in flight so Detail never opens on grey blocks. */
+.detail-loading-art {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-size: cover;
+  background-position: center top;
+  opacity: 0.6;
+}
+
+.detail-loading-art::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(5, 9, 15, 0.88), rgba(5, 9, 15, 0.45));
+}
+
+.detail-loading-shell.has-art > *:not(.detail-loading-art) {
+  position: relative;
+  z-index: 1;
 }
 
 .detail-loading-top {

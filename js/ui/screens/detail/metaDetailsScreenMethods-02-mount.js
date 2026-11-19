@@ -135,8 +135,19 @@ export function createMetaDetailsScreenMethods02() {
         return;
       }
 
+      // The card the user just focused already delivered its artwork over
+      // HTTP, so painting it into the shell makes Detail look alive at once
+      // instead of waiting for the metadata round-trip (up to 4.5s).
+      const instantArtwork = String(
+        this.params?.fallbackBackground || this.params?.fallbackPoster || ""
+      ).trim();
       this.container.innerHTML = `
-          <div class="detail-loading-shell" aria-label="Loading detail">
+          <div class="detail-loading-shell${instantArtwork ? " has-art" : ""}" aria-label="Loading detail">
+            ${
+              instantArtwork
+                ? `<div class="detail-loading-art" aria-hidden="true" style="background-image:url('${instantArtwork.replace(/'/g, "%27")}')" ></div>`
+                : ""
+            }
             <div class="detail-loading-top">
               <div class="detail-loading-block detail-loading-poster"></div>
             </div>

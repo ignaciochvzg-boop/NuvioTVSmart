@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import * as internals from "./startupSyncService.js";
+import { Router } from "../../ui/navigation/routerState.js";
 
 export function createStartupSyncServiceMethods01() {
   const {
@@ -114,6 +115,12 @@ export function createStartupSyncServiceMethods01() {
         return;
       }
       this.intervalId = setInterval(() => {
+        // A periodic pull does network + storage bursts that can stall segment
+        // fetches on low-memory TVs; skip it while playback owns the route.
+        // The next tick re-attempts after the player exits.
+        if (Router.getCurrent?.() === "player") {
+          return;
+        }
         this.scheduleSurfacePull("periodic");
       }, PERIODIC_SURFACE_PULL_INTERVAL_MS);
     },
@@ -184,6 +191,9 @@ export function createStartupSyncServiceMethods01() {
       return () => syncPullCompletedListeners.delete(listener);
     },
     scheduleSurfacePull(reason = "foreground", delayMs = 0, minIntervalMs = 0, force = false) {
+      if (reason === "periodic" && Router.getCurrent?.() === "player") {
+        return false;
+      }
       if (!this.started || !this.profileScopedSyncEnabled || !AuthManager.isAuthenticated) {
         return false;
       }
@@ -207,6 +217,11 @@ export function createStartupSyncServiceMethods01() {
         () => {
           this.foregroundPullTimer = null;
           if (!this.started || !this.profileScopedSyncEnabled || !AuthManager.isAuthenticated) {
+            return;
+          }
+          // The pull was scheduled before entering the player; abort it now
+          // rather than bursting the network mid-playback.
+          if (reason === "periodic" && Router.getCurrent?.() === "player") {
             return;
           }
           if (this.inFlightPromise) {

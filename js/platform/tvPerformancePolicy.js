@@ -14,8 +14,10 @@ export const HOME_TV_PERFORMANCE_POLICY = Object.freeze({
   modernTrailerMountGraceMs: 1000,
   // Addon and TMDB enrichment of a newly focused card costs about 100 ms of
   // main-thread work on a 2019 Tizen set. Constrained sets show the catalog
-  // data at once and enrich only the card the user rests on.
-  constrainedHeroEnrichDwellMs: 500,
+  // data at once and enrich only the card the user rests on; 300 ms is long
+  // enough to skip the presses in between and short enough that the enriched
+  // logo/backdrop does not feel late.
+  constrainedHeroEnrichDwellMs: 300,
   modernArtworkCacheEntries: 640,
   legacyArtworkCacheEntries: 320,
   lowMemoryArtworkCacheEntries: 200

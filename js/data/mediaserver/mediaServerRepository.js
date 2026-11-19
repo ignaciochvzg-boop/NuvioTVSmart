@@ -91,9 +91,9 @@ function image(connection, item, type = "Primary", parentId = null) {
   if (!tag && !parentId) return null;
   return mediaServerUrl(connection, `/Items/${key(id)}/Images/${type}`, {
     tag,
-    maxHeight: type === "Primary" ? 600 : undefined,
-    maxWidth: type === "Backdrop" ? 1920 : undefined,
-    quality: 90,
+    maxHeight: type === "Primary" ? 450 : undefined,
+    maxWidth: type === "Backdrop" ? 1000 : undefined,
+    quality: 70,
     api_key: connection.token
   });
 }

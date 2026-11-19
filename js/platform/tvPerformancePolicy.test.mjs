@@ -51,7 +51,7 @@ test("a modern TV with 1 GB RAM uses the legacy eviction window", () => {
 });
 
 test("only constrained sets wait for focus to rest before enriching the hero", () => {
-  assert.equal(getHeroEnrichDwellMs({ isTvRuntime: true, isPerformanceConstrained: true }), 500);
+  assert.equal(getHeroEnrichDwellMs({ isTvRuntime: true, isPerformanceConstrained: true }), 300);
   assert.equal(getHeroEnrichDwellMs({ isTvRuntime: true, isPerformanceConstrained: false }), 0);
   assert.equal(getHeroEnrichDwellMs(null), 0);
 });

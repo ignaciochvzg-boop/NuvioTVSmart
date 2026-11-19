@@ -36,6 +36,13 @@ import { buildClockFormatOptions, resolveSystemHour12 } from "../../../core/play
 
 import { calculateRemainingPlaybackMilliseconds } from "../../../core/player/playbackEndTime.js";
 
+import {
+  formatStreamSourceSpeed,
+  isStreamSourceRecommended,
+  streamSourceSpeedMs,
+  streamSourceSpeedTier
+} from "../../../core/streams/streamSourceSpeed.js";
+
 import { resolveSubtitleStyleControlAvailability } from "../../../core/player/subtitlePresentationCapabilities.js";
 
 import { shouldTreatAsNaturalPlaybackCompletion } from "../../../core/player/naturalPlaybackCompletion.js";
@@ -330,6 +337,20 @@ export function renderPlayerSourceBadges(stream = {}, badgeSettings = StreamBadg
   const matchedBadges = matchStreamBadges(stream, badgeSettings.rules);
   const chips = [];
   const sizeBytes = stream.behaviorHints?.videoSize;
+  if (badgeSettings.showSourceSpeedBadges !== false) {
+    const speedMs = streamSourceSpeedMs(stream);
+    const speedTier = streamSourceSpeedTier(speedMs);
+    if (speedTier) {
+      if (isStreamSourceRecommended(stream)) {
+        chips.push(
+          `<span class="stream-route-stream-badge recommended">${escapeHtml(t("streams_recommended", {}, "RECOMMENDED"))}</span>`
+        );
+      }
+      chips.push(
+        `<span class="stream-route-stream-badge speed ${speedTier}">${escapeHtml(formatStreamSourceSpeed(speedMs))}</span>`
+      );
+    }
+  }
   if (badgeSettings.showFileSizeBadges !== false && sizeBytes != null) {
     const label = formatBytes(sizeBytes);
     if (label) {

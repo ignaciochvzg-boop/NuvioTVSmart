@@ -84,41 +84,41 @@ function withRuntime(
   }
 }
 
-test("browser keeps w500 card posters whether or not OffscreenCanvas exists", () => {
+test("browser serves w185 card posters whether or not OffscreenCanvas exists", () => {
   for (const offscreenCanvas of [false, true]) {
     withRuntime({ platform: null, offscreenCanvas }, () => {
       assert.equal(Platform.isBrowser(), true);
-      assert.equal(preferredTmdbCardPosterSize(), "w500");
-      assert.equal(normalizeTmdbPosterUrl(ORIGINAL_POSTER), W500_POSTER);
-      assert.equal(normalizeTmdbPosterUrl(W500_POSTER), W500_POSTER);
+      assert.equal(preferredTmdbCardPosterSize(), "w185");
+      assert.equal(normalizeTmdbPosterUrl(ORIGINAL_POSTER), "https://image.tmdb.org/t/p/w185/poster.jpg");
+      assert.equal(normalizeTmdbPosterUrl(W500_POSTER), "https://image.tmdb.org/t/p/w185/poster.jpg");
       assert.equal(
         mdbMedia({ ids: { imdb: "tt0001" }, poster: "/p.jpg" }).poster,
-        "https://image.tmdb.org/t/p/w500/p.jpg"
+        "https://image.tmdb.org/t/p/w185/p.jpg"
       );
     });
   }
 });
 
 for (const platform of ["tizen", "webos"]) {
-  test(`${platform} without OffscreenCanvas serves w342 TMDB card posters`, () => {
+  test(`${platform} without OffscreenCanvas serves w154 TMDB card posters`, () => {
     withRuntime({ platform, offscreenCanvas: false }, () => {
       assert.equal(Platform.isTizen() || Platform.isWebOS(), true);
-      assert.equal(preferredTmdbCardPosterSize(), "w342");
+      assert.equal(preferredTmdbCardPosterSize(), "w154");
       assert.equal(
         normalizeTmdbPosterUrl(ORIGINAL_POSTER),
-        "https://image.tmdb.org/t/p/w342/poster.jpg"
+        "https://image.tmdb.org/t/p/w154/poster.jpg"
       );
       assert.equal(
         normalizeTmdbPosterUrl(W500_POSTER),
-        "https://image.tmdb.org/t/p/w342/poster.jpg"
+        "https://image.tmdb.org/t/p/w154/poster.jpg"
       );
       assert.equal(
         normalizeTmdbPosterUrl("//image.tmdb.org/t/p/W500/poster.jpg"),
-        "//image.tmdb.org/t/p/w342/poster.jpg"
+        "//image.tmdb.org/t/p/w154/poster.jpg"
       );
       assert.equal(
         mdbMedia({ ids: { imdb: "tt0001" }, poster: "/p.jpg" }).poster,
-        "https://image.tmdb.org/t/p/w342/p.jpg"
+        "https://image.tmdb.org/t/p/w154/p.jpg"
       );
       const [libraryItem] = decodeMdbListItems({
         movies: [
@@ -130,37 +130,37 @@ for (const platform of ["tizen", "webos"]) {
           }
         ]
       });
-      assert.equal(libraryItem.poster, "https://image.tmdb.org/t/p/w342/p.jpg");
-      assert.equal(libraryItem.background, "https://image.tmdb.org/t/p/w780/b.jpg");
+      assert.equal(libraryItem.poster, "https://image.tmdb.org/t/p/w154/p.jpg");
+      assert.equal(libraryItem.background, "https://image.tmdb.org/t/p/w300/b.jpg");
     });
   });
 
-  test(`${platform} without OffscreenCanvas on a 4K panel keeps w500 card posters`, () => {
+  test(`${platform} without OffscreenCanvas on a 4K panel keeps w185 card posters`, () => {
     // A 4K panel that lays the app out at 1920 CSS px paints the card at two
-    // device pixels per CSS pixel, so w342 would be upscaled. Android TV keeps
-    // w500 here too.
+    // device pixels per CSS pixel, so w154 would be upscaled. It steps up to
+    // the regular card size (w185) instead.
     withRuntime(
       { platform, offscreenCanvas: false, screenWidth: 3840, devicePixelRatio: 2 },
       () => {
-        assert.equal(preferredTmdbCardPosterSize(), "w500");
-        assert.equal(normalizeTmdbPosterUrl(ORIGINAL_POSTER), W500_POSTER);
-        assert.equal(normalizeTmdbPosterUrl(W500_POSTER), W500_POSTER);
+        assert.equal(preferredTmdbCardPosterSize(), "w185");
+        assert.equal(normalizeTmdbPosterUrl(ORIGINAL_POSTER), "https://image.tmdb.org/t/p/w185/poster.jpg");
+        assert.equal(normalizeTmdbPosterUrl(W500_POSTER), "https://image.tmdb.org/t/p/w185/poster.jpg");
         assert.equal(
           mdbMedia({ ids: { imdb: "tt0001" }, poster: "/p.jpg" }).poster,
-          "https://image.tmdb.org/t/p/w500/p.jpg"
+          "https://image.tmdb.org/t/p/w185/p.jpg"
         );
       }
     );
   });
 
-  test(`${platform} with OffscreenCanvas keeps w500 card posters`, () => {
+  test(`${platform} with OffscreenCanvas serves w185 card posters`, () => {
     withRuntime({ platform, offscreenCanvas: true }, () => {
-      assert.equal(preferredTmdbCardPosterSize(), "w500");
-      assert.equal(normalizeTmdbPosterUrl(ORIGINAL_POSTER), W500_POSTER);
-      assert.equal(normalizeTmdbPosterUrl(W500_POSTER), W500_POSTER);
+      assert.equal(preferredTmdbCardPosterSize(), "w185");
+      assert.equal(normalizeTmdbPosterUrl(ORIGINAL_POSTER), "https://image.tmdb.org/t/p/w185/poster.jpg");
+      assert.equal(normalizeTmdbPosterUrl(W500_POSTER), "https://image.tmdb.org/t/p/w185/poster.jpg");
       assert.equal(
         mdbMedia({ ids: { imdb: "tt0001" }, poster: "/p.jpg" }).poster,
-        "https://image.tmdb.org/t/p/w500/p.jpg"
+        "https://image.tmdb.org/t/p/w185/p.jpg"
       );
     });
   });
@@ -185,33 +185,37 @@ test("non-TMDB poster URLs stay byte-for-byte unchanged on every runtime", () =>
   }
 });
 
-test("backdrops resolve to at most w780 on TVs without the rescaler", () => {
+test("backdrops resolve to at most w300 on every runtime", () => {
   withRuntime({ platform: "tizen", offscreenCanvas: false }, () => {
     assert.equal(
       normalizeTmdbBackdropUrl(ORIGINAL_BACKDROP),
-      "https://image.tmdb.org/t/p/w780/backdrop.jpg"
+      "https://image.tmdb.org/t/p/w300/backdrop.jpg"
     );
     assert.equal(
       normalizeTmdbBackdropUrl("https://image.tmdb.org/t/p/w1280/backdrop.jpg"),
-      "https://image.tmdb.org/t/p/w780/backdrop.jpg"
+      "https://image.tmdb.org/t/p/w300/backdrop.jpg"
     );
     assert.equal(
       normalizeTmdbBackdropUrl("https://image.tmdb.org/t/p/w780/backdrop.jpg"),
-      "https://image.tmdb.org/t/p/w780/backdrop.jpg"
+      "https://image.tmdb.org/t/p/w300/backdrop.jpg"
+    );
+    assert.equal(
+      normalizeTmdbBackdropUrl("https://image.tmdb.org/t/p/w500/backdrop.jpg"),
+      "https://image.tmdb.org/t/p/w300/backdrop.jpg"
     );
     assert.equal(
       mdbMedia({ ids: { imdb: "tt0001" }, backdrop: "/b.jpg" }).background,
-      "https://image.tmdb.org/t/p/w780/b.jpg"
+      "https://image.tmdb.org/t/p/w300/b.jpg"
     );
   });
 });
 
 test("the card poster size is computed once until reset", () => {
   withRuntime({ platform: "tizen", offscreenCanvas: false }, () => {
-    assert.equal(preferredTmdbCardPosterSize(), "w342");
+    assert.equal(preferredTmdbCardPosterSize(), "w154");
     globalThis.OffscreenCanvas = class OffscreenCanvasStub {};
-    assert.equal(preferredTmdbCardPosterSize(), "w342", "cached until reset");
+    assert.equal(preferredTmdbCardPosterSize(), "w154", "cached until reset");
     resetPreferredTmdbCardPosterSizeForTests();
-    assert.equal(preferredTmdbCardPosterSize(), "w500");
+    assert.equal(preferredTmdbCardPosterSize(), "w185");
   });
 });

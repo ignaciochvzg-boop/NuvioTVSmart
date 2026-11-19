@@ -146,6 +146,9 @@ export function flattenStreams(streamResult) {
         addonOrderIndex: Number.isFinite(Number(stream.addonOrderIndex))
           ? Number(stream.addonOrderIndex)
           : Number(group.addonOrderIndex ?? Number.MAX_SAFE_INTEGER),
+        requestDurationMs: Number.isFinite(Number(stream.requestDurationMs ?? group.requestDurationMs))
+          ? Number(stream.requestDurationMs ?? group.requestDurationMs)
+          : null,
         mimeType: stream.mimeType || stream.raw?.mimeType || stream.type || stream.source || null,
         sourceType: stream.sourceType || stream.mimeType || stream.type || stream.source || "",
         raw: stream

@@ -184,6 +184,18 @@ function rememberResolved(cacheKey, result) {
   }
 }
 
+/**
+ * Drop the cached resolve for a stream so the next resolve() call hits the
+ * debrid API again. Used when a previously resolved link expired mid-playback
+ * and playback must re-resolve instead of re-serving the dead URL.
+ */
+export function invalidateResolvedStreamCache(stream = {}, { season = null, episode = null } = {}) {
+  const key = cacheKeyFor(stream, season, episode);
+  if (key) {
+    resolvedCache.delete(key);
+  }
+}
+
 function failure(status, detail = "") {
   return { status, detail };
 }

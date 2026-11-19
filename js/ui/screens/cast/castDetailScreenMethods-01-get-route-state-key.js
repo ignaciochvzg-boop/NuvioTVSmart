@@ -13,6 +13,7 @@ export function createCastDetailScreenMethods01() {
     I18n,
     renderLoadingIndicator,
     TMDB_BASE_URL,
+    PROFILE_IMAGE_BASE_URL,
     t,
     escapeHtml,
     escapeAttribute,
@@ -194,7 +195,7 @@ export function createCastDetailScreenMethods01() {
           birthday: person?.birthday || "",
           placeOfBirth: person?.place_of_birth || "",
           knownForDepartment: person?.known_for_department || "",
-          profile: toImage(person?.profile_path || this.params?.castPhoto || "")
+          profile: toImage(person?.profile_path || this.params?.castPhoto || "", PROFILE_IMAGE_BASE_URL)
         };
         const credits = Array.isArray(person?.combined_credits?.cast) ? person.combined_credits.cast : [];
         this.credits = credits

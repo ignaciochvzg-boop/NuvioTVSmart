@@ -87,6 +87,13 @@ import { isStreamEmptyStateVisible } from "./streamEmptyState.js";
 
 import { escapeHtml, STREAM_BADGE_LIMIT, t, formatBytes } from "./streamScreenHelpers-01-stream-badge-limit.js";
 
+import {
+  formatStreamSourceSpeed,
+  isStreamSourceRecommended,
+  streamSourceSpeedMs,
+  streamSourceSpeedTier
+} from "../../../core/streams/streamSourceSpeed.js";
+
 export function renderImageBadgeChip(badge = {}) {
   const imageUrl = normalizeAddonLogoUrl(badge.imageURL);
   if (!imageUrl) {
@@ -123,7 +130,28 @@ export function renderImageBadgeChip(badge = {}) {
   `;
 }
 
-export function renderImportedStreamBadgeChipContents(stream = {}, badges = [], showFileSizeBadges = true) {
+export function renderSourceSpeedChips(stream = {}, badgeSettings = null) {
+  if (badgeSettings && badgeSettings.showSourceSpeedBadges === false) {
+    return [];
+  }
+  const durationMs = streamSourceSpeedMs(stream);
+  const tier = streamSourceSpeedTier(durationMs);
+  if (!tier) {
+    return [];
+  }
+  const chips = [];
+  if (isStreamSourceRecommended(stream)) {
+    chips.push(
+      `<span class="stream-route-stream-badge recommended">${escapeHtml(t("streams_recommended", {}, "RECOMMENDED"))}</span>`
+    );
+  }
+  chips.push(
+    `<span class="stream-route-stream-badge speed ${tier}">${escapeHtml(formatStreamSourceSpeed(durationMs))}</span>`
+  );
+  return chips;
+}
+
+export function renderImportedStreamBadgeChipContents(stream = {}, badges = [], showFileSizeBadges = true, badgeSettings = null) {
   const sizeBytes = stream.behaviorHints?.videoSize;
   const chips = [];
   badges.slice(0, STREAM_BADGE_LIMIT).forEach((badge) => {
@@ -132,6 +160,7 @@ export function renderImportedStreamBadgeChipContents(stream = {}, badges = [], 
       chips.push(chip);
     }
   });
+  chips.push(...renderSourceSpeedChips(stream, badgeSettings));
   if (showFileSizeBadges && sizeBytes != null) {
     chips.push(
       `<span class="stream-route-stream-badge size">${escapeHtml(t("streams_size", [formatBytes(sizeBytes)], `SIZE ${formatBytes(sizeBytes)}`))}</span>`
@@ -140,8 +169,8 @@ export function renderImportedStreamBadgeChipContents(stream = {}, badges = [], 
   return chips.join("");
 }
 
-export function renderImportedStreamBadgeChips(stream = {}, badges = [], showFileSizeBadges = true) {
-  const contents = renderImportedStreamBadgeChipContents(stream, badges, showFileSizeBadges);
+export function renderImportedStreamBadgeChips(stream = {}, badges = [], showFileSizeBadges = true, badgeSettings = null) {
+  const contents = renderImportedStreamBadgeChipContents(stream, badges, showFileSizeBadges, badgeSettings);
   return contents
     ? `<div class="stream-route-card-badges" aria-label="${escapeHtml(t("settings_stream_badges_section", {}, "Fusion Style"))}">${contents}</div>`
     : "";
@@ -153,7 +182,12 @@ export function renderStreamBadges(stream = {}, enabled = true, badgeSettings = 
   }
   const currentBadgeSettings = badgeSettings || StreamBadgeSettingsStore.snapshot();
   const importedBadges = matchStreamBadges(stream, currentBadgeSettings.rules);
-  return renderImportedStreamBadgeChips(stream, importedBadges, currentBadgeSettings.showFileSizeBadges !== false);
+  return renderImportedStreamBadgeChips(
+    stream,
+    importedBadges,
+    currentBadgeSettings.showFileSizeBadges !== false,
+    currentBadgeSettings
+  );
 }
 
 export function hasStreamBadges(stream = {}, enabled = true, badgeSettings = null) {
@@ -162,6 +196,9 @@ export function hasStreamBadges(stream = {}, enabled = true, badgeSettings = nul
   }
   const currentBadgeSettings = badgeSettings || StreamBadgeSettingsStore.snapshot();
   if (currentBadgeSettings.showFileSizeBadges !== false && stream.behaviorHints?.videoSize != null) {
+    return true;
+  }
+  if (currentBadgeSettings.showSourceSpeedBadges !== false && streamSourceSpeedMs(stream)) {
     return true;
   }
   return matchStreamBadges(stream, currentBadgeSettings.rules).some((badge) => normalizeAddonLogoUrl(badge.imageURL));
@@ -175,7 +212,8 @@ export function renderStreamBadgeContents(stream = {}, enabled = true, badgeSett
   return renderImportedStreamBadgeChipContents(
     stream,
     matchStreamBadges(stream, currentBadgeSettings.rules),
-    currentBadgeSettings.showFileSizeBadges !== false
+    currentBadgeSettings.showFileSizeBadges !== false,
+    currentBadgeSettings
   );
 }
 

@@ -62,6 +62,10 @@ export function createSettingsScreenMethods09() {
         StreamBadgeSettingsStore.setShowAddonLogo(!badgeSettings.showAddonLogo);
       });
 
+      this.actionMap.set("streams:toggle:sourceSpeedBadges", () => {
+        StreamBadgeSettingsStore.setShowSourceSpeedBadges(badgeSettings.showSourceSpeedBadges === false);
+      });
+
       const badgePlacement =
         String(badgeSettings.badgePlacement || "BOTTOM")
           .trim()
@@ -228,6 +232,16 @@ export function createSettingsScreenMethods09() {
                   "Show file size badges in stream results and player source panels."
                 ),
                 checked: badgeSettings.showFileSizeBadges !== false
+              })}
+              ${this.renderToggleRow({
+                focusKey: "streams:toggle:sourceSpeedBadges",
+                title: t("settings_stream_speed_badges_title", {}, "Source speed badges"),
+                subtitle: t(
+                  "settings_stream_speed_badges_description",
+                  {},
+                  "Show how fast each source answered and mark quick, ready-to-play sources as recommended."
+                ),
+                checked: badgeSettings.showSourceSpeedBadges !== false
               })}
               ${this.renderToggleRow({
                 focusKey: "streams:toggle:addonLogo",

@@ -145,16 +145,31 @@ const SETTINGS_RAIL_HORIZONTAL_EDGE_PADDING = 24;
 
 export function updateSettingsMarqueeTargets(root) {
   root?.querySelectorAll?.(".settings-nav-label").forEach((label) => {
-    label._settingsMarqueeAnimation?.cancel?.();
-    label._settingsMarqueeAnimation = null;
-    label.classList.remove("is-marquee-active");
-    label.style.transform = "";
-    label.style.removeProperty("--settings-marquee-gap");
+    // Only labels that actually ran a marquee need the teardown: these writes
+    // (class/transform/animation) are what invalidate style, and skipping
+    // them in the steady state keeps a focus change from re-parsing every
+    // nav label on constrained TVs.
+    if (label._settingsMarqueeAnimation || label.classList.contains("is-marquee-active")) {
+      label._settingsMarqueeAnimation?.cancel?.();
+      label._settingsMarqueeAnimation = null;
+      label.classList.remove("is-marquee-active");
+      label.style.transform = "";
+      label.style.removeProperty("--settings-marquee-gap");
+    }
     const originalText = label.dataset.marqueeText || String(label.textContent || "");
-    label.dataset.marqueeText = originalText;
-    label.textContent = originalText;
+    // Guarded writes: assigning textContent replaces the text node even when
+    // the value is identical, which forces style/layout on every keypress.
+    if (label.dataset.marqueeText !== originalText) {
+      label.dataset.marqueeText = originalText;
+    }
+    if (label.textContent !== originalText) {
+      label.textContent = originalText;
+    }
     const textIsRtl = isContentRtl(originalText);
-    label.setAttribute("dir", textIsRtl ? "rtl" : "ltr");
+    const desiredDir = textIsRtl ? "rtl" : "ltr";
+    if (label.getAttribute("dir") !== desiredDir) {
+      label.setAttribute("dir", desiredDir);
+    }
 
     const item = label.closest(".settings-nav-item");
     if (!item?.classList.contains("focused")) {

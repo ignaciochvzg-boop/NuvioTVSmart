@@ -11,19 +11,24 @@ export const TMDB_BASE_URL = "https://api.themoviedb.org/3";
 // Aggregate series credits can exceed the ID-lookup response limit.
 export const TMDB_METADATA_MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
 
+// Sizes are chosen for speed on legacy TV engines: every image downloads and
+// decodes on the main thread, and card/hero art renders far smaller than the
+// Android TV reference sizes.
 export const TMDB_IMAGE_SIZES = {
-  poster: "w342",
-  // w780 covers a 1080p hero with headroom while cutting backdrop bytes ~60%
-  // versus w1280 (decode happens on the main thread on legacy TV engines).
-  backdrop: "w780",
-  logo: "w300",
-  titleLogo: "w500",
-  // Match Android TV: episode cards are wider than 300px on the TV layout.
-  still: "w500",
-  // Entity browse cards and logos follow the Android TMDB screen sizes.
-  entityPoster: "w500",
-  entityBackdrop: "w780",
-  entityLogo: "w500"
+  poster: "w185",
+  // w300 cuts backdrop bytes ~88% versus w1280 while still covering hero
+  // backgrounds (decode happens on the main thread on legacy TV engines).
+  backdrop: "w300",
+  // Logos paint inside 180-220px cards.
+  logo: "w92",
+  titleLogo: "w154",
+  // Episode stills render at 440-540px; w185 keeps the panel fast on engines
+  // that decode every still on the main thread.
+  still: "w185",
+  // Entity browse cards paint at ~252px.
+  entityPoster: "w185",
+  entityBackdrop: "w300",
+  entityLogo: "w154"
 };
 
 export const TMDB_TRAILER_FALLBACK_LANGUAGE = "en-US";

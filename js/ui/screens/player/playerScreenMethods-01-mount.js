@@ -47,6 +47,7 @@ export function createPlayerScreenMethods01() {
       this.shuffleNextCache = null;
       this.shuffleRemoteWatched = new Set();
       this.playerRouteActive = true;
+      this.startStreamUrlRefreshTicker();
       this.webOsClockLocaleInfo = null;
       this.webOsClockSettingsSubscription?.cancel?.();
       this.webOsClockSettingsSubscription = null;

@@ -286,14 +286,11 @@
   will-change: opacity;
 }
 
-@keyframes tizenCardLift {
-  from {
-    transform: scale(1);
-  }
-  to {
-    transform: scale(1.03);
-  }
-}
+/* Focus lift: the motion shutdown already flattens any animation to a single
+   frame, so the keyframes only paid a style/animation start per keypress.
+   The static scale keeps the focus feedback; the per-card `will-change` is
+   also gone because it forced a compositor layer onto every episode/cast/
+   company card at once, which costs GPU memory on2 GB TVs. */
 
 .performance-constrained .series-episode-card,
 .performance-constrained .detail-morelike-card,
@@ -338,9 +335,7 @@
 .legacy-tizen .series-insight-tab.focused,
 .legacy-tizen .series-primary-btn.focused,
 .legacy-tizen .series-circle-btn.focused {
-  animation: tizenCardLift 140ms ease-out both;
   transform: scale(1.03) !important;
-  will-change: transform !important;
 }
 
 .performance-constrained .modern-sidebar-nav-item.focused,
@@ -348,7 +343,6 @@
 .legacy-tizen .modern-sidebar-nav-item.focused,
 .legacy-tizen .modern-sidebar-profile.focused {
   transform: scale(1.04) !important;
-  will-change: transform !important;
 }
 
 /* Modern hero backdrop: brightness() + saturate() (components-16) put the
