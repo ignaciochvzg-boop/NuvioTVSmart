@@ -1,5 +1,10 @@
 import { Platform } from "../index.js";
 import { TizenCapabilities } from "./tizenCapabilities.js";
+import {
+  getTizenServiceStartMethods,
+  getWrtServiceClass,
+  startWithWrtServiceClass
+} from "./tizenWrtService.js";
 
 const LOCAL_BASE_URLS = ["http://127.0.0.1:2710", "http://localhost:2710"];
 
@@ -114,6 +119,11 @@ async function startViaWrtService(serviceId) {
     globalThis.webapis?.wrt?.service ||
     globalThis.webapis?.service;
   if (!wrtService) {
+    const Service = getWrtServiceClass(wrtBridge);
+    if (Service) {
+      diagnostic("wrt Service.start call", { serviceId });
+      return startWithWrtServiceClass(Service, serviceId);
+    }
     diagnostic("wrt service API unavailable", { serviceId });
     throw new Error("wrt service API unavailable");
   }
@@ -157,31 +167,22 @@ async function startViaTizenApplication(serviceId) {
 
 async function requestServiceStart(serviceId) {
   const errors = [];
-  const legacyServiceFirst = TizenCapabilities.get().webServiceSupported === false;
-  const officialAttempts = [
-    {
-      method: "tizen-application-control-default",
-      start: () => startViaApplicationControl(serviceId, TIZEN_DEFAULT_OPERATION)
-    },
-    {
-      method: "tizen-application-launch",
-      start: () => startViaTizenApplication(serviceId)
-    },
-    {
-      method: "wrt-service-legacy",
-      start: () => startViaWrtService(serviceId)
-    }
-  ];
-  // Samsung warns that application-control launches can disturb the
-  // foreground app when web.service is reported as unavailable. Preserve the
-  // legacy path that worked on older firmware first and only use the official
-  // application-control path when the capability is true or unknown.
-  const attempts = legacyServiceFirst
-    ? officialAttempts.slice(2).concat(officialAttempts.slice(1, 2))
-    : officialAttempts;
+  const capabilities = TizenCapabilities.get();
+  const starters = {
+    "wrt-service": () => startViaWrtService(serviceId),
+    "tizen-application-control-default": () =>
+      startViaApplicationControl(serviceId, TIZEN_DEFAULT_OPERATION),
+    "tizen-application-launch": () => startViaTizenApplication(serviceId)
+  };
+  const attempts = getTizenServiceStartMethods({
+    webServiceSupported: capabilities.webServiceSupported,
+    tizenMajorVersion: capabilities.tizenMajorVersion || 0,
+    tizenMinorVersion: capabilities.tizenMinorVersion || 0,
+    hasServiceClass: Boolean(getWrtServiceClass())
+  }).map((method) => ({ method, start: starters[method] }));
   diagnostic("launcher attempts selected", {
     serviceId,
-    webServiceSupported: TizenCapabilities.get().webServiceSupported,
+    webServiceSupported: capabilities.webServiceSupported,
     methods: attempts.map((attempt) => attempt.method)
   });
 
@@ -198,7 +199,9 @@ async function requestServiceStart(serviceId) {
         method: attempt.method,
         resultType: startResult === undefined ? "undefined" : typeof startResult
       });
-      return { method: attempt.method };
+      // An acknowledged start call does not guarantee a running service on
+      // every firmware, so the health probe decides before trying the next.
+      return { method: attempt.method, reachable: await waitForLocalBaseUrl() };
     } catch (error) {
       diagnostic("launcher attempt failed", {
         serviceId,
@@ -363,23 +366,17 @@ export const TizenEngineFsService = {
           throw new Error("Tizen EngineFS service id is unavailable");
         }
         diagnostic("service start requested", { serviceId });
-        const startResult = await requestServiceStart(serviceId);
-        diagnostic("explicit startup acknowledged", {
-          purpose,
-          serviceId,
-          method: startResult.method
-        });
-        const reachable = await waitForLocalBaseUrl();
+        const { method, reachable } = await requestServiceStart(serviceId);
         diagnostic("explicit startup health success", {
           purpose,
           serviceId,
-          method: startResult.method,
+          method,
           baseUrl: reachable.baseUrl
         });
         return {
           ...reachable,
           serviceId,
-          startMethod: startResult.method
+          startMethod: method
         };
       })().finally(() => {
         startPromise = null;

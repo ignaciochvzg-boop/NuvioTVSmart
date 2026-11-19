@@ -20,6 +20,7 @@ import {
   normalizePluginRepositoryType,
   normalizePluginState,
   pluginSupportsType,
+  jsPluginMediaType,
   randomPluginUuid,
   resolvePluginUrl,
   isPluginShortCode,
@@ -1030,9 +1031,10 @@ function createRemoteStub(remote = {}) {
 
 async function runWithPool(task, quota, signal) {
   if (signal?.aborted) return [];
-  if (runningExecutions >= quota.maxConcurrent) {
+  if (runningExecutions >= PluginRuntime.allowedConcurrency(quota.maxConcurrent)) {
     // Match Android's semaphore behavior: limit active workers without dropping
     // eligible providers when a source request starts a large scraper batch.
+    // The slot count adapts to the TV's memory, never above Android's ceiling.
     return new Promise((resolve) => {
       const queued = {
         task,
@@ -1059,7 +1061,13 @@ async function runWithPool(task, quota, signal) {
     return await task();
   } finally {
     runningExecutions = Math.max(0, runningExecutions - 1);
-    const next = queuedExecutions.shift();
+    // Keep the head of the queue in place while the pool is shrinking, so the
+    // provider order is preserved; a later completion frees its slot.
+    const next =
+      queuedExecutions.length &&
+      runningExecutions < PluginRuntime.allowedConcurrency(queuedExecutions[0].quota.maxConcurrent)
+        ? queuedExecutions.shift()
+        : null;
     if (next) {
       next.signal?.removeEventListener?.("abort", next.onAbort);
       if (next.signal?.aborted) {
@@ -1090,7 +1098,11 @@ async function executeOne(
   if (!code?.code) return [];
   const executionSettings =
     currentState(executionProfileId).settings.scraperSettings?.[scraper.id] || {};
-  const key = `${executionProfileId}:${repository.id}:${scraper.id}:${args.tmdbId}:${args.mediaType}:${args.season}:${args.episode}`;
+  const scraperArgs = {
+    ...args,
+    mediaType: jsPluginMediaType(args.mediaType, scraper.supportedTypes, args.season, args.episode)
+  };
+  const key = `${executionProfileId}:${repository.id}:${scraper.id}:${scraperArgs.tmdbId}:${scraperArgs.mediaType}:${scraperArgs.season}:${scraperArgs.episode}`;
   const promise = singleFlight
     .run(
       key,
@@ -1104,7 +1116,7 @@ async function executeOne(
               profileId: executionProfileId,
               repositoryId: repository.id,
               settings: executionSettings,
-              args,
+              args: scraperArgs,
               quota,
               timeoutMs: quota.providerTimeoutMs,
               signal: executionSignal
@@ -1169,7 +1181,11 @@ export const PluginManager = {
     const quota = quotaFor(getPluginCapabilitySnapshot());
     const state = currentState();
     const eligibleCount = executableScrapersForMediaType(state, mediaType).length;
-    const maxConcurrent = Math.max(1, Number(quota.maxConcurrent) || 1);
+    const ceiling = Math.max(1, Number(quota.maxConcurrent) || 1);
+    // The adaptive pool may shrink during a search; when it runs below Android's
+    // ceiling, size this outer cap for one provider at a time so queued
+    // providers are never cut. Each provider still has its own timeout.
+    const maxConcurrent = PluginRuntime.allowedConcurrency(ceiling) < ceiling ? 1 : ceiling;
     const providerTimeoutMs = Math.max(0, Number(quota.providerTimeoutMs) || 0);
     const queuedCount = runningExecutions + queuedExecutions.length;
     const totalProviderCount = eligibleCount + queuedCount;

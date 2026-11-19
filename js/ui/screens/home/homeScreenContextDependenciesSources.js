@@ -223,6 +223,7 @@ export {
   HERO_IMAGE_PRELOAD_CACHE_LIMIT,
   HERO_IMAGE_PRELOAD_TIMEOUT_MS,
   heroImagePreloadCache,
+  preloadHeroBackdrop,
   preloadImageSource,
   preloadHeroAssets,
   prepareHeroImageEnter
@@ -358,3 +359,7 @@ export {
 } from "./homeScreenHelpers-14-get-home-grid-column-count.js";
 
 export { createPosterCardMarkup } from "./homeScreenHelpers-15-create-poster-card-markup.js";
+
+export { PlayerSettingsStore } from "../../../data/local/playerSettingsStore.js";
+
+export { isAutoPlayEffectivelyEnabled } from "../../../core/streams/streamAutoPlaySelector.js";

@@ -19,6 +19,7 @@ import { DeviceSessionRegistration } from "./core/auth/deviceSessionRegistration
 import { ProfileManager } from "./core/profile/profileManager.js";
 import { MemberAccessRepository } from "./data/remote/supabase/memberAccessRepository.js";
 import { ProfileSyncService } from "./core/profile/profileSyncService.js";
+import { ProfileSettingsSyncService } from "./core/profile/profileSettingsSyncService.js";
 import { StartupSyncService } from "./core/profile/startupSyncService.js";
 import { ProviderCredentialSyncService } from "./core/profile/providerCredentialSyncService.js";
 import { ThemeManager } from "./ui/theme/themeManager.js";
@@ -428,6 +429,9 @@ async function enterWithLastProfile({ restoreWebOsRoute = false } = {}) {
     null;
   if (activeProfile) {
     await ProfileManager.setActiveProfile(activeProfile.id);
+    // The account wins at sign-in. Start the settings pull before Home without
+    // delaying its first paint; an edit made meanwhile aborts it and is pushed.
+    void ProfileSettingsSyncService.pull(activeProfile.id).catch(() => false);
     StartupSyncService.enableProfileScopedSync();
     detailWatchedEnrichmentService.invalidateAllCache();
     await I18n.init();
@@ -696,6 +700,11 @@ function setupTizenPlaybackLifecycle() {
   if (!Platform.isTizen()) return;
 
   document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      // Finish a player exit that the TV suspended before its history traversal committed.
+      void Router.resumePendingHistoryReturn();
+      return;
+    }
     if (document.visibilityState !== "hidden" || Router.getCurrent() !== "player") return;
 
     // Samsung requires hidden playback to follow the player exit path.

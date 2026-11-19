@@ -1,23 +1,41 @@
 const SUBTITLE_STYLE_CONTROL_IDS = [
   "delay",
+  "font",
   "fontSize",
   "bold",
   "stripSdh",
   "textColor",
   "textOpacity",
+  "backgroundColor",
+  "backgroundOpacity",
+  "backgroundRadius",
   "outlineEnabled",
   "outlineColor",
+  "outlineSize",
+  "shadowEnabled",
+  "shadowOpacity",
+  "shadowSize",
   "verticalOffset",
+  "hdrBrightness",
   "reset"
 ];
 const ASS_STYLE_CONTROL_IDS = [
+  "font",
   "fontSize",
   "bold",
   "textColor",
   "textOpacity",
+  "backgroundColor",
+  "backgroundOpacity",
+  "backgroundRadius",
   "outlineEnabled",
   "outlineColor",
+  "outlineSize",
+  "shadowEnabled",
+  "shadowOpacity",
+  "shadowSize",
   "verticalOffset",
+  "hdrBrightness",
   "reset"
 ];
 
@@ -43,6 +61,8 @@ export function resolveSubtitleStyleControlAvailability({
   }
   if (isWebOsNative && !["html", "html-callback"].includes(rendererMode)) {
     availability.textOpacity = false;
+    // Native cues draw the background color but cannot round its corners.
+    availability.backgroundRadius = false;
   }
   if (
     !isTizenAvPlay ||

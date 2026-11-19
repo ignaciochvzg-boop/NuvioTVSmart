@@ -122,6 +122,8 @@ export function createPlayerScreenMethods30() {
       }
       this.hasPresentedPlaybackFrame = true;
       markPlaybackProbePresented();
+      // Android clears the dismissal on each stream's first frame.
+      this.resetNextEpisodeCardDismissal();
       const currentStream = this.getCurrentStreamCandidate?.() || null;
       // Only a confirmed first frame counts as a plugin provider play, with the
       // group+identity dedupe Android uses.

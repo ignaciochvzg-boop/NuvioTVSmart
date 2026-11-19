@@ -1,5 +1,10 @@
 import { Platform } from "../index.js";
 import { TizenCapabilities } from "./tizenCapabilities.js";
+import {
+  getTizenServiceStartMethods,
+  getWrtServiceClass,
+  startWithWrtServiceClass
+} from "./tizenWrtService.js";
 
 const LOCAL_BASE_URLS = ["http://127.0.0.1:2711", "http://localhost:2711"];
 const START_TIMEOUT_MS = 12000;
@@ -18,6 +23,7 @@ const STARTUP_DIAGNOSTIC_EVENTS = new Set([
   "application-control start call",
   "application launch call",
   "wrt startService call",
+  "wrt Service.start call",
   "startService acknowledged",
   "startService failed",
   "health wait success",
@@ -34,6 +40,47 @@ const EXPECTED_STARTUP_EVENTS = new Set([
 ]);
 const lastStartupDiagnostic = new Map();
 let startPromise = null;
+// Last healthy probe. Probing /health before every plugin fetch doubled the
+// connections to the service and, under load, timed out and relaunched it.
+let cachedReachable = null;
+let reachableBaseUrls = [];
+let probePromise = null;
+// Chromium opens at most 6 connections per host (127.0.0.1 and localhost count
+// apart). Plugin fetches hold one for seconds, so cap them at 5 per host and
+// leave one free for /health and /cancel, which otherwise queued and failed.
+const FETCH_SLOTS_PER_BASE_URL = 5;
+const activeFetches = new Map();
+let fetchWaiters = [];
+
+function leastBusyBaseUrl(fallback) {
+  const urls = reachableBaseUrls.length ? reachableBaseUrls : [fallback];
+  return urls.reduce((best, url) =>
+    (activeFetches.get(url) || 0) < (activeFetches.get(best) || 0) ? url : best
+  );
+}
+
+async function acquireFetchSlot(fallback, signal) {
+  for (;;) {
+    if (signal?.aborted) throw new DOMException("The user aborted a request.", "AbortError");
+    const baseUrl = leastBusyBaseUrl(fallback);
+    const active = activeFetches.get(baseUrl) || 0;
+    if (active < FETCH_SLOTS_PER_BASE_URL) {
+      activeFetches.set(baseUrl, active + 1);
+      return baseUrl;
+    }
+    await new Promise((resolve) => {
+      fetchWaiters.push(resolve);
+      signal?.addEventListener?.("abort", resolve, { once: true });
+    });
+  }
+}
+
+function releaseFetchSlot(baseUrl) {
+  activeFetches.set(baseUrl, Math.max(0, (activeFetches.get(baseUrl) || 0) - 1));
+  const waiters = fetchWaiters;
+  fetchWaiters = [];
+  waiters.forEach((resolve) => resolve());
+}
 
 function diagnosticError(error) {
   const details = {
@@ -205,6 +252,11 @@ async function startWithApplication(serviceId) {
 async function startWithWrtService(serviceId) {
   const service = globalThis.__NUVIO_TIZEN_WRT_SERVICE__;
   if (!service || typeof service.startService !== "function") {
+    const Service = getWrtServiceClass(service);
+    if (Service) {
+      diagnostic("wrt Service.start call", { serviceId });
+      return startWithWrtServiceClass(Service, serviceId);
+    }
     diagnostic("wrt service API unavailable", { serviceId });
     throw new Error("Tizen wrt:service startService API unavailable");
   }
@@ -212,30 +264,25 @@ async function startWithWrtService(serviceId) {
   return service.startService.call(service, serviceId);
 }
 
-function getStartAttempts(serviceId, webServiceSupported) {
-  const wrtAttempt = {
-    method: "wrt-service",
-    start: () => startWithWrtService(serviceId)
+function getStartAttempts(
+  serviceId,
+  webServiceSupported,
+  tizenMajorVersion = 0,
+  tizenMinorVersion = 0
+) {
+  const starters = {
+    "wrt-service": () => startWithWrtService(serviceId),
+    "tizen-application-control-default": () => startWithApplicationControl(serviceId),
+    "tizen-application-launch": () => startWithApplication(serviceId)
   };
-  const applicationControlAttempt = {
-    method: "tizen-application-control-default",
-    start: () => startWithApplicationControl(serviceId)
-  };
-  const applicationLaunchAttempt = {
-    method: "tizen-application-launch",
-    start: () => startWithApplication(serviceId)
-  };
-
-  // Samsung documents wrt:service.startService() as the Web Service API. Its
-  // TV guidance also warns that launchAppControl() can disturb the foreground
-  // application when the web.service capability is unavailable. Therefore
-  // use the application-control fallback only for an explicit true capability;
-  // application.launch remains the final generic-ID fallback and is accepted
-  // only after the real PluginService /health endpoint becomes reachable.
-  const attempts =
-    webServiceSupported === true
-      ? [wrtAttempt, applicationControlAttempt, applicationLaunchAttempt]
-      : [wrtAttempt, applicationLaunchAttempt];
+  // The same order as EngineFS: the health probe after each attempt decides,
+  // so an acknowledged call that did not start the service falls through.
+  const attempts = getTizenServiceStartMethods({
+    webServiceSupported,
+    tizenMajorVersion,
+    tizenMinorVersion,
+    hasServiceClass: Boolean(getWrtServiceClass())
+  }).map((method) => ({ method, start: starters[method] }));
   diagnostic("launcher attempts selected", {
     serviceId,
     webServiceSupported,
@@ -244,9 +291,19 @@ function getStartAttempts(serviceId, webServiceSupported) {
   return attempts;
 }
 
-async function requestServiceStart(serviceId, webServiceSupported = null) {
+async function requestServiceStart(
+  serviceId,
+  webServiceSupported = null,
+  tizenMajorVersion = 0,
+  tizenMinorVersion = 0
+) {
   const errors = [];
-  const attempts = getStartAttempts(serviceId, webServiceSupported);
+  const attempts = getStartAttempts(
+    serviceId,
+    webServiceSupported,
+    tizenMajorVersion,
+    tizenMinorVersion
+  );
   diagnostic("startup sequence begin", {
     serviceId,
     webServiceSupported,
@@ -334,6 +391,8 @@ async function findBaseUrl(timeoutMs = PROBE_TIMEOUT_MS) {
   });
   const reachable = results.find((entry) => entry.result);
   if (reachable) {
+    cachedReachable = reachable.result;
+    reachableBaseUrls = results.filter((entry) => entry.result).map((entry) => entry.baseUrl);
     return reachable.result;
   }
 
@@ -382,7 +441,7 @@ export const TizenPluginService = {
       return {
         returnValue: false,
         status: "unsupported",
-        detail: "Tizen plugin support starts at Tizen 6.0"
+        detail: "Tizen plugin support starts at Tizen 5.0"
       };
     }
     const reachable = await findBaseUrl();
@@ -406,12 +465,13 @@ export const TizenPluginService = {
     const capabilities = TizenCapabilities.get();
     if (!capabilities.tizenPluginVersionSupported) {
       diagnostic("ensure skipped", {
-        reason: "Tizen plugin support starts at Tizen 6.0",
+        reason: "Tizen plugin support starts at Tizen 5.0",
         tizenVersion: capabilities.tizenVersion || "",
         tizenMajorVersion: capabilities.tizenMajorVersion || 0
       });
-      return { status: "unsupported", detail: "Tizen plugin support starts at Tizen 6.0" };
+      return { status: "unsupported", detail: "Tizen plugin support starts at Tizen 5.0" };
     }
+    if (cachedReachable) return { status: "success", ...cachedReachable, started: false };
     const serviceId = getServiceId();
     diagnostic("ensure begin", {
       serviceId,
@@ -436,7 +496,9 @@ export const TizenPluginService = {
       return { status: "unsupported", detail: "Tizen WebAssembly is unavailable" };
     }
     try {
-      const reachable = await findBaseUrl();
+      // Concurrent first requests share one probe.
+      if (!probePromise) probePromise = findBaseUrl().finally(() => (probePromise = null));
+      const reachable = await probePromise;
       diagnostic("ensure found existing service", { baseUrl: reachable.baseUrl });
       return { status: "success", ...reachable, started: false };
     } catch (error) {
@@ -452,7 +514,9 @@ export const TizenPluginService = {
           }
           const startResult = await requestServiceStart(
             serviceId,
-            capabilities.webServiceSupported
+            capabilities.webServiceSupported,
+            capabilities.tizenMajorVersion || 0,
+            capabilities.tizenMinorVersion || 0
           );
           const reachable = startResult.reachable;
           diagnostic("explicit startup success", {
@@ -497,6 +561,7 @@ export const TizenPluginService = {
 
   async health() {
     diagnostic("health API requested", {});
+    cachedReachable = null; // an explicit health check always probes the service
     const started = await this.ensureStarted();
     if (started.status !== "success") {
       diagnostic("health API unavailable", { detail: started.detail || "" });
@@ -536,7 +601,11 @@ export const TizenPluginService = {
     const started = await this.ensureStarted();
     if (started.status !== "success")
       throw new Error(started.detail || "Tizen plugin service unavailable");
-    const baseUrl = started.baseUrl;
+    const holdsSlot = method === "fetch";
+    // A fetch whose scraper was aborted while waiting must not take a slot.
+    const baseUrl = holdsSlot
+      ? await acquireFetchSlot(started.baseUrl, signal)
+      : leastBusyBaseUrl(started.baseUrl);
     const requestDetails = serviceRequestDetails(method, baseUrl, timeoutMs, payload, signal);
     diagnostic("service request begin", requestDetails);
     const controller = typeof AbortController === "function" ? new AbortController() : null;
@@ -561,6 +630,11 @@ export const TizenPluginService = {
       });
       return result;
     } catch (error) {
+      // Connection refused: the service died, so the next request probes and restarts it.
+      if (error?.name === "TypeError" && !controller?.signal?.aborted) {
+        cachedReachable = null;
+        reachableBaseUrls = [];
+      }
       diagnostic("service request failed", {
         ...requestDetails,
         error: diagnosticError(error)
@@ -569,6 +643,7 @@ export const TizenPluginService = {
     } finally {
       clearTimeout(timer);
       signal?.removeEventListener?.("abort", abort);
+      if (holdsSlot) releaseFetchSlot(baseUrl);
     }
   },
 

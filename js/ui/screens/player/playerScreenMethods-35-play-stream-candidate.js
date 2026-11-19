@@ -3,6 +3,9 @@ import { WatchProgressStore } from "../../../data/local/watchProgressStore.js";
 import { MediaServerRepository, canResolveMediaServerStream } from "../../../data/mediaserver/mediaServerRepository.js";
 import { getStreamUrlExpiryTimestampMs } from "../../../core/player/hlsNetworkErrorPolicy.js";
 import { invalidateResolvedStreamCache } from "../../../core/debrid/directDebridResolver.js";
+import { StreamLinkCacheStore } from "../../../data/local/streamLinkCacheStore.js";
+import { findSourceRefreshCandidate, hasLikelyExpiringPlaybackCredentials } from "../../../core/player/playbackUrlCredentials.js";
+import { isSourceFallbackActive, nextSourceFallbackCandidate, sourceFallbackKey } from "../../../core/player/sourceFallback.js";
 /* eslint-disable no-unused-vars */
 import * as internals from "./playerScreenContext.js";
 
@@ -12,6 +15,10 @@ import * as internals from "./playerScreenContext.js";
 // reactive recovery in showExpiredStreamError.
 const STREAM_URL_REFRESH_TICK_MS = 5 * 60 * 1000;
 const STREAM_URL_REFRESH_LEAD_MS = 5 * 60 * 1000;
+const EXPIRED_LINK_REFRESH_TIMEOUT_MS = 15000;
+// Android polls the joined source search 30 times, 500 ms apart.
+const SOURCE_FALLBACK_POLL_COUNT = 30;
+const SOURCE_FALLBACK_POLL_INTERVAL_MS = 500;
 
 export function createPlayerScreenMethods35() {
   const {
@@ -25,7 +32,10 @@ export function createPlayerScreenMethods35() {
     t,
     streamDirectPlaybackUrl,
     flattenStreamGroups,
-    normalizeItemType
+    normalizeItemType,
+    mergeStreamItems,
+    PlayerSettingsStore,
+    addonRepository
   } = internals;
 
   return {
@@ -368,6 +378,8 @@ export function createPlayerScreenMethods35() {
             Object.assign(streamCandidate, {
               url: targetUrl,
               externalUrl: null,
+              // Android Stream.debridResolved: the URL came from Nuvio's resolver, not the add-on.
+              debridResolved: true,
               mimeType: result.stream.mimeType || streamCandidate.mimeType,
               sourceType: result.stream.sourceType || streamCandidate.sourceType,
               behaviorHints: result.stream.behaviorHints || streamCandidate.behaviorHints,
@@ -537,6 +549,268 @@ export function createPlayerScreenMethods35() {
         mountToken,
         sourceCandidate: streamCandidate
       });
+    },
+    /**
+     * Android tryRefreshExpiredLinkAfterError: a link reopened from the reuse-last-link
+     * cache, or one with expiring credentials, is fetched again from its add-on (debrid
+     * resolved anew) and continues from the saved position. Each URL is refreshed once.
+     * Returns true when a refresh started and the error must not be shown yet.
+     */
+    tryRefreshExpiredLinkAfterError(message = "", errorOptions = {}) {
+      const candidate = this.getCurrentStreamCandidate?.() || null;
+      // The source's own URL; a candidate without one (an unresolved debrid result) has nothing to refresh.
+      const failedUrl = String(candidate ? streamDirectPlaybackUrl(candidate) : this.activePlaybackUrl || "").trim();
+      if (!/^https?:\/\//i.test(failedUrl) || this.isLivePlayback?.() === true) {
+        return false;
+      }
+      const fromLinkCache = Boolean(this.linkCacheSourceUrl) && failedUrl === this.linkCacheSourceUrl;
+      if (!fromLinkCache && !hasLikelyExpiringPlaybackCredentials(failedUrl)) {
+        return false;
+      }
+      if (failedUrl === this.linkRefreshAttemptedUrl) {
+        return false;
+      }
+      this.linkRefreshAttemptedUrl = failedUrl;
+      this.linkCacheSourceUrl = null;
+      const hints = candidate?.behaviorHints || candidate?.raw?.behaviorHints || {};
+      const expected = {
+        addonName: String(candidate?.addonName || "").trim(),
+        streamName: String(candidate?.name || "").trim() || String(candidate?.addonName || "").trim(),
+        infoHash: String(candidate?.infoHash || candidate?.raw?.infoHash || "").trim(),
+        filename: hints.filename || null,
+        bingeGroup: this.getCurrentStreamBingeGroup?.() || null
+      };
+      const mountToken = this.playerMountToken;
+      const resolveContext = {
+        season: this.params?.season == null ? null : Number(this.params.season),
+        episode: this.params?.episode == null ? null : Number(this.params.episode)
+      };
+      console.info("Link likely expired, fetching the source again", { addon: expected.addonName });
+      this.loadingVisible = true;
+      this.updateLoadingVisibility?.();
+      this.refreshLoadingOverlayPresentation?.();
+      const showError = () => {
+        if (this.isActiveMountToken(mountToken)) {
+          this.showStartupError(message, errorOptions);
+        }
+      };
+      void (async () => {
+        try {
+          StreamLinkCacheStore.remove(this.params?.streamRouteParams || this.params || {});
+          const type = normalizeItemType(this.params?.itemType || "movie");
+          const videoId = String(this.params?.videoId || this.params?.itemId || "");
+          const result = videoId
+            ? await Promise.race([
+                streamRepository.getStreamsFromAllAddons(type, videoId, {
+                  itemId: String(this.params?.itemId || ""),
+                  season: this.params?.season ?? null,
+                  episode: this.params?.episode ?? null,
+                  forceRefresh: true
+                }),
+                // Android polls the reloaded sources for up to 15 seconds.
+                new Promise((resolve) => setTimeout(() => resolve(null), EXPIRED_LINK_REFRESH_TIMEOUT_MS))
+              ])
+            : null;
+          if (!this.isActiveMountToken(mountToken)) {
+            return;
+          }
+          const freshStreams = result ? flattenStreamGroups(result) : [];
+          const found = findSourceRefreshCandidate(freshStreams, failedUrl, expected, (stream) =>
+            DirectDebridResolver.canResolveStream(stream, resolveContext)
+          );
+          // Debrid links are always requested anew; a prepared one may be the expired link.
+          let refreshed = found
+            ? found.debridResolved
+              ? { ...found, url: null, externalUrl: null, debridResolved: false }
+              : { ...found }
+            : null;
+          if (refreshed && !streamDirectPlaybackUrl(refreshed)) {
+            const resolved = await DirectDebridResolver.resolve(refreshed, { ...resolveContext, forceRefresh: true });
+            if (!this.isActiveMountToken(mountToken)) {
+              return;
+            }
+            refreshed =
+              resolved?.status === "success" && resolved.stream
+                ? { ...refreshed, ...resolved.stream, externalUrl: null, debridResolved: true }
+                : null;
+          }
+          const refreshedUrl = refreshed ? String(streamDirectPlaybackUrl(refreshed) || "").trim() : "";
+          if (!refreshedUrl || refreshedUrl === failedUrl) {
+            console.warn("No fresh link was found for the failed source");
+            showError();
+            return;
+          }
+          this.streamCandidates = mergeStreamItems(this.streamCandidates, [refreshed]);
+          if (!this.streamCandidates.some((entry) => entry?.url === refreshedUrl)) {
+            this.streamCandidates = [...this.streamCandidates, refreshed];
+          }
+          if (candidate && this.autoSelectedSourceKey === sourceFallbackKey(candidate)) {
+            this.autoSelectedSourceKey = sourceFallbackKey(refreshed);
+          }
+          // Continues from the saved position; the new link is saved for reuse once it starts.
+          await this.playStreamCandidate(refreshed, { preservePlaybackState: true, mountToken });
+        } catch (error) {
+          console.warn("Expired link refresh failed", error);
+          showError();
+        }
+      })();
+      return true;
+    },
+    /**
+     * Android scheduleSourceStartupTimeout: an auto-selected source that shows no first
+     * frame within the configured time counts as failed and falls back. The last source
+     * allowed keeps loading, as it would without the fallback.
+     */
+    scheduleSourceStartupTimeout() {
+      clearTimeout(this.sourceStartupTimeoutTimer);
+      this.sourceStartupTimeoutTimer = null;
+      const settings = PlayerSettingsStore.get();
+      if (!isSourceFallbackActive(settings) || !this.autoSelectedSourceKey) {
+        return;
+      }
+      const url = String(this.activePlaybackUrl || "");
+      const mountToken = this.playerMountToken;
+      const seconds = Number(settings.streamAutoPlayFallbackStartupTimeoutSeconds) || 15;
+      this.sourceStartupTimeoutTimer = setTimeout(() => {
+        this.sourceStartupTimeoutTimer = null;
+        if (
+          !this.isActiveMountToken(mountToken) ||
+          this.hasPresentedPlaybackFrame ||
+          String(this.activePlaybackUrl || "") !== url ||
+          this.isStartupErrorVisible?.() ||
+          globalThis.document?.hidden
+        ) {
+          return;
+        }
+        if (this.sourceFallbackAttempts >= Number(settings.streamAutoPlayFallbackMaxSources || 0)) {
+          return;
+        }
+        const message = t("player_error_source_startup_timeout", [seconds], `The source did not start within ${seconds} seconds.`);
+        if (this.tryFallbackToNextSourceAfterError(message)) {
+          console.warn(`Source showed no first frame in ${seconds}s, falling back`);
+        }
+      }, seconds * 1000);
+    },
+    /**
+     * Android tryFallbackToNextSourceAfterError: when the auto-selected source fails before
+     * playback starts, quietly plays the next source auto selection would pick, up to the
+     * configured number of further sources. A source the user picked never falls back.
+     * Returns true when a fallback started and the error must not be shown yet.
+     */
+    tryFallbackToNextSourceAfterError(message = "", errorOptions = {}) {
+      if (this.sourceFallbackInFlight) {
+        return true;
+      }
+      const settings = PlayerSettingsStore.get();
+      if (
+        this.sourceFallbackExhausted ||
+        !isSourceFallbackActive(settings) ||
+        this.hasPresentedPlaybackFrame ||
+        this.isLivePlayback?.() === true
+      ) {
+        return false;
+      }
+      const candidate = this.getCurrentStreamCandidate?.() || null;
+      if (!candidate || !this.autoSelectedSourceKey || sourceFallbackKey(candidate) !== this.autoSelectedSourceKey) {
+        return false;
+      }
+      const maxSources = Number(settings.streamAutoPlayFallbackMaxSources || 0);
+      const linkCacheParams = this.params?.streamRouteParams || this.params || {};
+      if (this.sourceFallbackAttempts >= maxSources) {
+        // The last source tried was saved for reuse when it started, but it failed.
+        StreamLinkCacheStore.remove(linkCacheParams);
+        return false;
+      }
+      const failedUrl = String(streamDirectPlaybackUrl(candidate) || "").trim();
+      const failedAddonName = String(candidate.addonName || "");
+      const failedInfoHash = String(candidate.infoHash || candidate.raw?.infoHash || "");
+      const triedKeys = this.sourceFallbackTriedKeys || (this.sourceFallbackTriedKeys = new Set());
+      triedKeys.add(sourceFallbackKey(candidate));
+      if (failedUrl) {
+        triedKeys.add(`url:${failedUrl}`);
+      }
+      const mountToken = this.playerMountToken;
+      const resolveContext = {
+        season: this.params?.season == null ? null : Number(this.params.season),
+        episode: this.params?.episode == null ? null : Number(this.params.episode)
+      };
+      this.sourceFallbackInFlight = true;
+      this.loadingVisible = true;
+      this.updateLoadingVisibility?.();
+      this.refreshLoadingOverlayPresentation?.();
+      void (async () => {
+        try {
+          // Joins the source search, so results already found are reused.
+          if (this.completedSourceRequestKey !== this.getSourceRequestKey?.()) {
+            await this.reloadSources({ forceRefresh: false });
+          }
+          for (let polls = 0; this.sourcesLoading && polls < SOURCE_FALLBACK_POLL_COUNT; polls += 1) {
+            await new Promise((resolve) => setTimeout(resolve, SOURCE_FALLBACK_POLL_INTERVAL_MS));
+          }
+          if (!this.isActiveMountToken(mountToken)) {
+            return;
+          }
+          const installedAddonNames = new Set(
+            ((await addonRepository.getInstalledAddons().catch(() => [])) || [])
+              .map((addon) => String(addon?.displayName || addon?.name || "").trim())
+              .filter(Boolean)
+          );
+          while (this.sourceFallbackAttempts < maxSources) {
+            const next = nextSourceFallbackCandidate({
+              streams: this.streamCandidates,
+              settings,
+              installedAddonNames,
+              triedKeys,
+              failedAddonName,
+              failedInfoHash
+            });
+            if (!next) {
+              break;
+            }
+            triedKeys.add(sourceFallbackKey(next));
+            this.sourceFallbackAttempts += 1;
+            let playable = { ...next };
+            if (!streamDirectPlaybackUrl(playable)) {
+              if (!DirectDebridResolver.canResolveStream(playable, resolveContext)) {
+                continue;
+              }
+              const resolved = await DirectDebridResolver.resolve(playable, resolveContext);
+              if (!this.isActiveMountToken(mountToken)) {
+                return;
+              }
+              if (resolved?.status !== "success" || !resolved.stream) {
+                console.info(`Fallback source from ${next.addonName} has no playable link, trying the next one`);
+                continue;
+              }
+              playable = { ...playable, ...resolved.stream, externalUrl: null, debridResolved: true };
+            }
+            const url = String(streamDirectPlaybackUrl(playable) || "").trim();
+            if (!url || url === failedUrl) {
+              continue;
+            }
+            console.info(`Source failed to start, falling back to ${playable.name || playable.addonName}`);
+            this.streamCandidates = mergeStreamItems(this.streamCandidates, [playable]);
+            if (!this.streamCandidates.some((entry) => entry?.url === url)) {
+              this.streamCandidates = [...this.streamCandidates, playable];
+            }
+            this.sourceFallbackInFlight = false;
+            this.autoSelectedSourceKey = sourceFallbackKey(playable);
+            triedKeys.add(`url:${url}`);
+            await this.playStreamCandidate(playable, { preservePlaybackState: true, mountToken });
+            return;
+          }
+          // The last source that failed may have been saved for reuse.
+          StreamLinkCacheStore.remove(linkCacheParams);
+        } catch (error) {
+          console.warn("Source fallback failed", error);
+        }
+        this.sourceFallbackInFlight = false;
+        if (this.isActiveMountToken(mountToken)) {
+          this.sourceFallbackExhausted = true;
+          this.showStartupError(message, errorOptions);
+        }
+      })();
+      return true;
     },
     async switchStream(direction) {
       if (!this.streamCandidates.length) {

@@ -4,6 +4,7 @@ import * as internals from "./playerScreenContext.js";
 
 export function createPlayerScreenMethods24() {
   const {
+    SubtitleAppearance,
     PlayerController,
     PlayerSettingsStore,
     Environment,
@@ -178,6 +179,8 @@ export function createPlayerScreenMethods24() {
             streamCandidates: streamItems,
             preferredStreamId: bestStreamCandidate.id || null,
             playbackSourceContext: this.getPlaybackSourceContext(bestStreamCandidate),
+            // Android: the next episode's auto-selected source falls back too.
+            autoPlayNav: true,
             returnToStreamOnBack: false,
             returnHomeOnBack: this.buildDetailRouteParamsFromPlayer().returnHomeOnBack,
             nextEpisodeVideoId: followingEpisode?.id || null,
@@ -306,18 +309,24 @@ export function createPlayerScreenMethods24() {
       const boldShadow = style.bold
         ? `0.45px 0 0 ${subtitleColor}, -0.45px 0 0 ${subtitleColor}, 0 0.45px 0 ${subtitleColor}, 0 -0.45px 0 ${subtitleColor}`
         : "";
-      const outlineShadow = style.outlineEnabled
-        ? Environment.isWebOS()
-          ? `-2px -2px 0 ${outlineColor}, 0 -2px 0 ${outlineColor}, 2px -2px 0 ${outlineColor}, -2px 0 0 ${outlineColor}, 2px 0 0 ${outlineColor}, -2px 2px 0 ${outlineColor}, 0 2px 0 ${outlineColor}, 2px 2px 0 ${outlineColor}`
-          : `0 0 2px ${outlineColor}, 0 0 4px ${outlineColor}`
-        : "";
-      const subtitleShadow = [outlineShadow, boldShadow].filter(Boolean).join(", ") || "none";
-      const htmlSubtitleShadow = Environment.isWebOS() ? outlineShadow || "none" : subtitleShadow;
-      const htmlSubtitleFontFamily = Environment.isWebOS()
-        ? style.bold
-          ? '"NuvioSubtitleBold", "Roboto", Arial, sans-serif'
-          : '"NuvioSubtitleRegular", "Roboto", Arial, sans-serif'
-        : "";
+      const outlineShadow = SubtitleAppearance.subtitleOutlineShadowCss(style, {
+        color: outlineColor,
+        crisp: Environment.isWebOS()
+      });
+      // Android drop shadow (offset, blurred black) under the text fill.
+      const dropShadow = SubtitleAppearance.subtitleDropShadowCss(style);
+      const subtitleShadow = [outlineShadow, boldShadow, dropShadow === "none" ? "" : dropShadow].filter(Boolean).join(", ") || "none";
+      const htmlSubtitleShadow = Environment.isWebOS()
+        ? outlineShadow || "none"
+        : [outlineShadow, boldShadow].filter(Boolean).join(", ") || "none";
+      const chosenFontFamily = SubtitleAppearance.subtitleFontFamilyCss(style.fontId);
+      const htmlSubtitleFontFamily =
+        chosenFontFamily ||
+        (Environment.isWebOS()
+          ? style.bold
+            ? '"NuvioSubtitleBold", "Roboto", Arial, sans-serif'
+            : '"NuvioSubtitleRegular", "Roboto", Arial, sans-serif'
+          : "");
       const subtitleFontSize = normalizeSubtitleFontSize(style.fontSize);
       const htmlSubtitleFontSize = formatHtmlSubtitleFontSize(subtitleFontSize);
       PlayerController.setWebOsSubtitleFontSize?.(subtitleFontSize);
@@ -335,10 +344,22 @@ export function createPlayerScreenMethods24() {
       uiRoot.style.setProperty("--player-subtitle-outline-color", outlineColor);
       uiRoot.style.setProperty("--player-subtitle-font-size", `${subtitleFontSize}%`);
       uiRoot.style.setProperty("--player-html-subtitle-font-size", htmlSubtitleFontSize);
-      if (Environment.isWebOS()) {
+      if (htmlSubtitleFontFamily) {
         uiRoot.style.setProperty("--player-html-subtitle-font-family", htmlSubtitleFontFamily);
       } else {
         uiRoot.style.removeProperty("--player-html-subtitle-font-family");
+      }
+      uiRoot.style.setProperty("--player-subtitle-drop-shadow", dropShadow);
+      uiRoot.style.setProperty("--player-subtitle-background-radius", SubtitleAppearance.subtitleBackgroundRadiusCss(style));
+      // Android draws one rounded background around the widest line of a cue.
+      this.uiRefs?.htmlSubtitles?.classList.toggle(
+        "player-html-subtitles-block-background",
+        SubtitleAppearance.hasVisibleSubtitleBackground(hdrStyle.backgroundColor)
+      );
+      if (chosenFontFamily) {
+        video.style.setProperty("--player-subtitle-font-family", chosenFontFamily);
+      } else {
+        video.style.removeProperty("--player-subtitle-font-family");
       }
       uiRoot.style.setProperty("--player-subtitle-font-weight", subtitleFontWeight);
       uiRoot.style.setProperty("--player-subtitle-shadow", htmlSubtitleShadow);

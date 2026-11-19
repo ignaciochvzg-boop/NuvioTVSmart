@@ -9,6 +9,19 @@ import {
   SUBTITLE_TEXT_OPACITY_DEFAULT,
   normalizeSubtitleTextOpacity
 } from "../../core/player/subtitleTextOpacity.js";
+import {
+  SOURCE_FALLBACK_MAX_SOURCES_DEFAULT,
+  SOURCE_FALLBACK_MAX_SOURCES_MAX,
+  SOURCE_FALLBACK_MAX_SOURCES_MIN,
+  SOURCE_STARTUP_TIMEOUT_SECONDS_DEFAULT,
+  SOURCE_STARTUP_TIMEOUT_SECONDS_MAX,
+  SOURCE_STARTUP_TIMEOUT_SECONDS_MIN,
+  SOURCE_STARTUP_TIMEOUT_SECONDS_STEP
+} from "../../core/player/sourceFallback.js";
+import {
+  SUBTITLE_APPEARANCE_DEFAULTS,
+  normalizeSubtitleAppearance
+} from "../../core/player/subtitleAppearance.js";
 import { AUTO_SYNC_TOLERANCE_OPTIONS_MS } from "../../core/player/subtitleAutoSyncEngine.js";
 import {
   HDR_BRIGHTNESS_DEFAULT,
@@ -47,6 +60,10 @@ const DEFAULTS = {
   stillWatchingEnabled: false,
   stillWatchingEpisodeThreshold: 3,
   osdClockEnabled: true,
+  // Android "Show Chapters" (exo_chapters_enabled): marks, chapter title and the
+  // chapters panel. Chapters still feed skip intro when it is off.
+  chaptersEnabled: false,
+  chapterTitleEnabled: true,
   subtitleRenderMode: "native",
   subtitleStyle: {
     fontSize: 100,
@@ -69,7 +86,8 @@ const DEFAULTS = {
     hdrStyleEnabled: false,
     hdrTextColor: "#FFFFFF",
     hdrBrightness: HDR_BRIGHTNESS_DEFAULT,
-    hdrDimPlayerControls: false
+    hdrDimPlayerControls: false,
+    ...SUBTITLE_APPEARANCE_DEFAULTS
   },
   audioAmplificationDb: 0,
   persistAudioAmplification: false,
@@ -84,8 +102,24 @@ const DEFAULTS = {
   streamAutoPlayReuseBingeGroup: false,
   streamReuseLastLinkEnabled: false,
   streamReuseLastLinkCacheHours: 24,
-  streamAutoPlayTimeoutSeconds: 3
+  streamAutoPlayTimeoutSeconds: 3,
+  // Android "Fallback to next matching source on failure" (device-local, not synced).
+  streamAutoPlayFallbackOnFailure: false,
+  streamAutoPlayFallbackMaxSources: SOURCE_FALLBACK_MAX_SOURCES_DEFAULT,
+  streamAutoPlayFallbackStartupTimeoutSeconds: SOURCE_STARTUP_TIMEOUT_SECONDS_DEFAULT
 };
+
+function normalizeIntInRange(value, min, max, fallback, step = 1) {
+  const number = Math.trunc(Number(value));
+  if (!Number.isFinite(number)) {
+    return fallback;
+  }
+  const clamped = Math.min(max, Math.max(min, number));
+  return min + Math.round((clamped - min) / step) * step;
+}
+
+/** The stored subtitle style defaults, for "Reset Appearance". */
+export const DEFAULT_SUBTITLE_STYLE = Object.freeze({ ...DEFAULTS.subtitleStyle });
 
 const STREAM_AUTO_PLAY_MODES = ["MANUAL", "FIRST_STREAM", "REGEX_MATCH"];
 const STREAM_AUTO_PLAY_SOURCES = ["ALL_SOURCES", "INSTALLED_ADDONS_ONLY", "ENABLED_PLUGINS_ONLY"];
@@ -260,6 +294,7 @@ export function normalizePlayerSettings(settings = {}) {
   );
   subtitleStyle.verticalOffsetContract = SUBTITLE_VERTICAL_OFFSET_CONTRACT;
   subtitleStyle.textOpacity = normalizeSubtitleTextOpacity(subtitleStyle.textOpacity);
+  Object.assign(subtitleStyle, normalizeSubtitleAppearance(subtitleStyle));
   let preferredLanguage = normalizeSelectableSubtitleLanguageCode(
     subtitleStyle.preferredLanguage ?? persistentSettings.subtitleLanguage,
     DEFAULTS.subtitleStyle.preferredLanguage
@@ -347,6 +382,20 @@ export function normalizePlayerSettings(settings = {}) {
     streamReuseLastLinkCacheHours: normalizeReuseLastLinkCacheHours(
       persistentSettings.streamReuseLastLinkCacheHours
     ),
+    streamAutoPlayFallbackOnFailure: persistentSettings.streamAutoPlayFallbackOnFailure === true,
+    streamAutoPlayFallbackMaxSources: normalizeIntInRange(
+      persistentSettings.streamAutoPlayFallbackMaxSources,
+      SOURCE_FALLBACK_MAX_SOURCES_MIN,
+      SOURCE_FALLBACK_MAX_SOURCES_MAX,
+      SOURCE_FALLBACK_MAX_SOURCES_DEFAULT
+    ),
+    streamAutoPlayFallbackStartupTimeoutSeconds: normalizeIntInRange(
+      persistentSettings.streamAutoPlayFallbackStartupTimeoutSeconds,
+      SOURCE_STARTUP_TIMEOUT_SECONDS_MIN,
+      SOURCE_STARTUP_TIMEOUT_SECONDS_MAX,
+      SOURCE_STARTUP_TIMEOUT_SECONDS_DEFAULT,
+      SOURCE_STARTUP_TIMEOUT_SECONDS_STEP
+    ),
     streamAutoPlayTimeoutSeconds: normalizeStreamAutoPlayTimeout(
       persistentSettings.streamAutoPlayTimeoutSeconds
     ),
@@ -371,6 +420,10 @@ export function normalizePlayerSettings(settings = {}) {
       settings.stillWatchingEpisodeThreshold ?? DEFAULTS.stillWatchingEpisodeThreshold
     ),
     osdClockEnabled: Boolean(persistentSettings.osdClockEnabled ?? DEFAULTS.osdClockEnabled),
+    chaptersEnabled: Boolean(persistentSettings.chaptersEnabled ?? DEFAULTS.chaptersEnabled),
+    chapterTitleEnabled: Boolean(
+      persistentSettings.chapterTitleEnabled ?? DEFAULTS.chapterTitleEnabled
+    ),
     subtitlesEnabled: true,
     secondaryPreferredAudioLanguage: (() => {
       const normalized = String(

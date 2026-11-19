@@ -550,10 +550,44 @@ async function resolveGuestPromise(context, runtime, handle, timeoutMs) {
   return resolution;
 }
 
+var quickJSModulePromise = null;
+
+// wasmBytes is the lowered MVP build the page sends, once per worker, when the
+// engine cannot pass i64 between JS and WASM (Chrome < 85).
+function loadQuickJS(QJS, wasmBytes) {
+  if (quickJSModulePromise) return quickJSModulePromise;
+  if (!wasmBytes) return QJS.getQuickJS();
+  quickJSModulePromise = WebAssembly.compile(wasmBytes)
+    .then(function (wasmModule) {
+      return QJS.newQuickJSWASMModule(QJS.newVariant(QJS.RELEASE_SYNC, { wasmModule: wasmModule }));
+    })
+    .catch(function (error) {
+      quickJSModulePromise = null;
+      throw error;
+    });
+  return quickJSModulePromise;
+}
+
+// The pool reuses this worker after a result; the WASM size it reached tells
+// the runtime how much memory a provider costs on this TV.
+function sendResult(execution, results) {
+  var wasmMemoryBytes = 0;
+  try {
+    wasmMemoryBytes = execution.quickJS.getWasmMemory().buffer.byteLength;
+  } catch (_) {}
+  send({ type: "result", results: results, wasmMemoryBytes: wasmMemoryBytes });
+}
+
 async function execute(message) {
   // Workers do not inherit the page's core-js polyfills on older TV browsers.
   if (typeof workerScope.globalThis === "undefined") workerScope.globalThis = workerScope;
-  importScripts("../libs/quickjs-emscripten.global.js");
+  // A pooled worker serves many providers: load the QuickJS script only once.
+  // Chromium < 67 (Tizen 5.0) has no BigInt; the glue only builds 64-bit heap
+  // views it never reads, since the MVP build passes i64 imports as f64.
+  if (typeof workerScope.BigInt64Array !== "function") {
+    workerScope.BigInt64Array = workerScope.BigUint64Array = function () {};
+  }
+  if (!workerScope.QJS) importScripts("../libs/quickjs-emscripten.global.js");
   var QJS = workerScope.QJS;
   if (!QJS || typeof QJS.getQuickJS !== "function")
     throw new Error("QuickJS WASM asset unavailable");
@@ -575,7 +609,8 @@ async function execute(message) {
   // the VM on the regular QuickJS module, as Android does, and drive promise
   // jobs explicitly in resolveGuestPromise(). This avoids Asyncify re-entry
   // and its smaller/less predictable host stack on Tizen Web Workers.
-  var quickJS = await QJS.getQuickJS();
+  var quickJS = await loadQuickJS(QJS, message.quickJSWasm);
+  execution.quickJS = quickJS;
   var context = quickJS.newContext({
     // Eval is required by quickjs-emscripten's evalCode host API and remains
     // available to the guest, as it does on Android.
@@ -817,7 +852,7 @@ async function execute(message) {
       level: "error",
       message: "getStreams invocation failed: " + String(error?.message || error)
     });
-    send({ type: "result", results: [] });
+    sendResult(execution, []);
     return;
   }
   var resolvedCallResult;
@@ -845,7 +880,7 @@ async function execute(message) {
       message:
         "getStreams promise failed: " + String(providerCallError?.message || providerCallError)
     });
-    send({ type: "result", results: [] });
+    sendResult(execution, []);
     return;
   }
   disposeCallHandle();
@@ -868,7 +903,7 @@ async function execute(message) {
     : [];
   execution.cleanup();
   activeExecution = null;
-  send({ type: "result", results });
+  sendResult(execution, results);
 }
 
 workerScope.onmessage = function (event) {

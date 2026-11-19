@@ -17,6 +17,8 @@ export function createPlayerScreenMethods64() {
 
   return {
     moveSourcesFocus(direction) {
+      // Android: any move (Up included) keeps the panel from jumping to the playing stream later.
+      this.sourcesUserMoved = true;
       const orderedSources = this.getOrderedStreamCandidates();
       const filters = this.getSourceFilters(orderedSources);
       const list = this.getFilteredSources(orderedSources);
@@ -73,6 +75,16 @@ export function createPlayerScreenMethods64() {
       }
 
       if (zone === "list") {
+        if (direction === "left" || direction === "right") {
+          // Android: Left/Right in the source list switch to the previous/next addon filter.
+          const current = filters.indexOf(this.sourceFilter);
+          const next = filters[current + (direction === "right" ? 1 : -1)];
+          if (current >= 0 && next) {
+            this.setSourceFilter(next);
+            this.renderSourcesPanel();
+          }
+          return;
+        }
         if (direction === "up") {
           if (index > 0) {
             this.sourcesFocus = { zone: "list", index: index - 1 };
