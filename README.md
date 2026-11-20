@@ -4,7 +4,7 @@ Fork de [NuvioMedia/NuvioTVSmart](https://github.com/NuvioMedia/NuvioTVSmart) qu
 
 **Dispositivo de pruebas:** Samsung **UN58MU6120F** (2017, Tizen 3.0, Chromium 47, SoC de un solo núcleo).
 
-**Versión base:** 1.3.7 del proyecto original. El upstream ya publicó la 1.3.11 (con mejoras propias para TV); este fork aún no la integra — hacerlo exige re-verificar todo en el equipo antes de publicarlo.
+**Versión base:** 1.4.4 del proyecto original, integrada vía merge (`d12c2869`) y verificada: cadena `test:android-parity` completa en verde, build OK (Chrome 47) e instalada en el TV. Release `1.4.4` publicado con el `.wgt` firmado.
 
 ## Estado: qué funciona y qué no
 
