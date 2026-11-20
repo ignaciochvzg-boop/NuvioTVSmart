@@ -7,6 +7,12 @@ globalThis.localStorage = {
   setItem: (key, value) => stored.set(key, value),
   removeItem: (key) => stored.delete(key)
 };
+// Pin the display locale: the label assertion is English-only, and
+// detectSystemLocale() would otherwise follow this machine's OS language.
+Object.defineProperty(globalThis, "navigator", {
+  value: { language: "en", languages: ["en"] },
+  configurable: true
+});
 
 const { createPlayerScreenMethods41 } =
   await import("./playerScreenMethods-41-build-subtitle-track-signature.js");

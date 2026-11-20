@@ -11,7 +11,8 @@ globalThis.localStorage = {
   }
 };
 globalThis.window = globalThis;
-globalThis.navigator = { userAgent: "node" };
+// Node 21+ exposes navigator as a getter-only global; plain assignment throws.
+Object.defineProperty(globalThis, "navigator", { value: { userAgent: "node" }, configurable: true });
 globalThis.document = {
   documentElement: { lang: "en" },
   addEventListener() {},

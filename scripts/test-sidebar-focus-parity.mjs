@@ -30,13 +30,15 @@ const profileFocused = rule(modern, ".modern-sidebar-profile.focused");
 const iconCircle = rule(modern, ".modern-sidebar-nav-icon-circle");
 
 assert.match(navItem, /transform 180ms/);
-assert.match(selected, /rgb\(var\(--secondary-color-rgb\)\s*\/\s*0\.15\)/);
+// b72fd8d1 moved these to rgba(var(--secondary-color-rgb-legacy), …) so old
+// TV engines can render the themed fill; the Android-matched opacities hold.
+assert.match(selected, /rgba\(var\(--secondary-color-rgb-legacy\),\s*0\.15\)/);
 assert.doesNotMatch(selected, /background:\s*var\(--secondary-color\)/);
 assert.match(focused, /rgba\(255,\s*255,\s*255,\s*0\.12\)/);
 assert.match(focused, /transform:\s*scale\(1\.1\)/);
 assert.doesNotMatch(focused, /--focus-bg/);
 assert.doesNotMatch(focused, /border-color/);
-assert.match(selectedFocused, /rgb\(var\(--secondary-color-rgb\)\s*\/\s*0\.28\)/);
+assert.match(selectedFocused, /rgba\(var\(--secondary-color-rgb-legacy\),\s*0\.28\)/);
 assert.match(profileFocused, /rgba\(255,\s*255,\s*255,\s*0\.12\)/);
 assert.doesNotMatch(profileFocused, /scale\(/);
 assert.doesNotMatch(profileFocused, /border-color/);

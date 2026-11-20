@@ -89,7 +89,7 @@ async function setup(platform = "browser") {
           // Keep the real composition, helpers, route snapshots, profiles, history,
           // search requests and cancellation. Replace only unrelated screens and
           // UI/platform/repository imports in the two composition modules.
-          b.onLoad({ filter: /\/(?:searchScreen|router)\.js$/ }, async ({ path }) => ({
+          b.onLoad({ filter: /[\\/](?:searchScreen|router)\.js$/ }, async ({ path }) => ({
             contents: (await readFile(path, "utf8")).replace(
               /import\s+(\{[^}]+\})\s+from\s+["']([^"']+)["'];/g,
               (statement, bindings, source) =>
@@ -101,14 +101,14 @@ async function setup(platform = "browser") {
             ),
             loader: "js"
           }));
-          b.onLoad({ filter: /\/localStore\.js$/ }, () => ({
+          b.onLoad({ filter: /[\\/]localStore\.js$/ }, () => ({
             contents: "export const { LocalStore } = fixtures;",
             loader: "js"
           }));
           b.onLoad(
             {
               filter:
-                /\/(?:pluginCodeStore|pluginStore|homeCatalogSettingsSyncService|profileScopedStore)\.js$/
+                /[\\/](?:pluginCodeStore|pluginStore|homeCatalogSettingsSyncService|profileScopedStore)\.js$/
             },
             () => ({
               contents: `
@@ -120,7 +120,7 @@ async function setup(platform = "browser") {
               loader: "js"
             })
           );
-          b.onLoad({ filter: /\/customPoster\.js$/ }, () => ({
+          b.onLoad({ filter: /[\\/]customPoster\.js$/ }, () => ({
             contents:
               "export const customPosterForItem = item => item; export const posterFallbackAttributes = () => '';",
             loader: "js"

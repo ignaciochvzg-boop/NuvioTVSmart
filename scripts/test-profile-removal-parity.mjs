@@ -51,17 +51,17 @@ const bundle = await build({
     {
       name: "fixtures",
       setup(b) {
-        b.onLoad({ filter: /\/repository\/simklAuthService\.js$/ }, () => ({
+        b.onLoad({ filter: /[\\/]repository[\\/]simklAuthService\.js$/ }, () => ({
           contents:
             "export const SimklAuthService = { isAuthenticated: () => true }; export const simklRequest = (...args) => globalThis.__removalSimklRequest(...args);"
         }));
-        b.onLoad({ filter: /\/core\/auth\/authManager\.js$/ }, () => ({
+        b.onLoad({ filter: /[\\/]core[\\/]auth[\\/]authManager\.js$/ }, () => ({
           contents: "export const AuthManager = globalThis.__removalAuth;"
         }));
-        b.onLoad({ filter: /\/core\/network\/httpClient\.js$/ }, () => ({
+        b.onLoad({ filter: /[\\/]core[\\/]network[\\/]httpClient\.js$/ }, () => ({
           contents: "export const httpRequest = (...args) => globalThis.__removalHttp(...args);"
         }));
-        b.onLoad({ filter: /\/core\/player\/pluginManager\.js$/ }, async ({ path }) => ({
+        b.onLoad({ filter: /[\\/]core[\\/]player[\\/]pluginManager\.js$/ }, async ({ path }) => ({
           contents: (await readFile(path, "utf8")) + "\nexport { downloadCode };"
         }));
       }

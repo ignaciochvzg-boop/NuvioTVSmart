@@ -101,7 +101,7 @@ async function setup({ settings, metaRepository }) {
         setup(b) {
           b.onLoad(
             {
-              filter: /(?:config|tmdbSettingsStore|pluginServiceClient)\.js$|platform\/index\.js$/
+              filter: /(?:config|tmdbSettingsStore|pluginServiceClient)\.js$|platform[\\/]index\.js$/
             },
             ({ path }) => {
               const contents = path.endsWith("config.js")

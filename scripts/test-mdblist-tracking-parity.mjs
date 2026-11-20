@@ -506,6 +506,7 @@ const cleanupSource = await readFile(
 const cleanupEvents = [];
 const cleanupMethods = new Function(
   "internals",
+  "clearPlaybackProbe",
   cleanupSource.replace(/^import .*;\r?\n/gm, "").replace("export function", "function") +
     "; return createPlayerScreenMethods73();"
 )({
@@ -516,7 +517,7 @@ const cleanupMethods = new Function(
   },
   PlayerController: {},
   streamRepository: {}
-});
+}, () => {});
 const cleanup = cleanupMethods.cleanup;
 const cleanupScreen = {
   ...cleanupMethods,
@@ -555,12 +556,13 @@ let frameStarts = 0;
 let framePluginPlays = 0;
 const frameMethods = new Function(
   "internals",
+  "markPlaybackProbePresented",
   frameSource.replace(/^import .*;\r?\n/gm, "").replace("export function", "function") +
     "; return createPlayerScreenMethods30();"
 )({
   TrackingScrobbleService: { isEnabled: () => true, start: () => frameStarts++ },
   recordDistinctPluginPlay: () => framePluginPlays++
-});
+}, () => {});
 const frameScreen = {
   hasPresentedPlaybackFrame: false,
   currentEngineFsStream: {},
@@ -571,7 +573,9 @@ const frameScreen = {
   warmBitmapSubtitleSharedResources() {},
   setLoadingLogoFillTarget() {},
   isStartupGateReleaseReady: () => false,
-  clearPlaybackStallGuard() {}
+  clearPlaybackStallGuard() {},
+  // Upstream #1410 clears the next-episode dismissal on the first frame.
+  resetNextEpisodeCardDismissal() {}
 };
 assert.equal(frameMethods.markPlaybackPresentedAfterAdvance.call(frameScreen, 0), false);
 assert.equal(frameStarts, 0);

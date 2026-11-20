@@ -551,6 +551,8 @@ const { createPlayerScreenMethods11 } =
 const gateScreen = {
   ...createPlayerScreenMethods11(),
   getTrackProbeUrl: () => "https://example.test/gate.mkv",
+  // Upstream e51d8f82 reads the filename hint through the current candidate.
+  getCurrentStreamCandidate: () => ({}),
   isCurrentSourceAdaptiveManifest: () => false
 };
 PlayerController.playbackEngine = "tizen-avplay";

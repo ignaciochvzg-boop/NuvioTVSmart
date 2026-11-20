@@ -65,9 +65,24 @@ async function setup() {
               "export const detailShuffleSettings = () => ({}); export const selectDetailShuffle = () => null; export const detailShuffleResume = () => null;",
             loader: "js"
           }));
+          // The TMDB negative cache backs the whole host off after one network
+          // error, which would make a later season in this batch return null and
+          // masquerade as a failed season. This file only asserts season
+          // isolation and concurrency; the cache has its own dedicated tests
+          // (tmdbNegativeCache.test.mjs, tmdbServiceNegativeCache.test.mjs).
+          b.onLoad({ filter: /tmdbNegativeCache\.js$/ }, () => ({
+            contents: `
+              export const isTmdbRequestBlocked = () => false;
+              export const isTmdbHostBackedOff = () => false;
+              export const noteTmdbRequestResult = () => {};
+              export const flushTmdbNegativeCacheForTests = () => {};
+              export const resetTmdbNegativeCacheForTests = () => {};
+            `,
+            loader: "js"
+          }));
           b.onLoad(
             {
-              filter: /(?:config|tmdbSettingsStore|pluginServiceClient)\.js$|platform\/index\.js$/
+              filter: /(?:config|tmdbSettingsStore|pluginServiceClient)\.js$|platform[\\/]index\.js$/
             },
             ({ path }) => {
               const contents = path.endsWith("config.js")

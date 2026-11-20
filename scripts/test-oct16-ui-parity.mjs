@@ -77,7 +77,11 @@ const fixtures = {
   isPerformanceConstrainedRuntime: () => false,
   escapeHtml: String,
   contentTextDirection: () => "ltr",
-  findStreamVirtualIndex: () => 0
+  findStreamVirtualIndex: () => 0,
+  // Upstream a6682ecf reads the perf profile in the focused-poster flow; the
+  // grace must stay 0 so the mount happens synchronously in this test.
+  getTvRuntimePerformanceProfile: () => "legacy",
+  getTrailerMountGraceMs: () => 0
 };
 const context = vm.createContext({
   fixtures,
@@ -96,6 +100,10 @@ ambient.show = () => {
   started++;
 };
 ambient.signature = JSON.stringify(["1", fixtures.AmbientModeStore.get()]);
+ambient.tick();
+// The screensaver block arms only after ten idle seconds (upstream b0ed37eb),
+// so the first tick just starts the idle window; the second one past it blocks.
+clock = 10000;
 ambient.tick();
 assert.equal(
   screenSaverBlocked,
@@ -117,6 +125,9 @@ screen = {};
 clock = 121000;
 ambient.tick();
 assert.equal(started, 0);
+// Re-arming also waits for the ten idle seconds after the trailer stops.
+clock = 131000;
+ambient.tick();
 assert.equal(screenSaverBlocked, true, "idle screen blocks the Tizen screensaver again");
 clock = 180999;
 ambient.tick();
@@ -151,6 +162,8 @@ context.document.createElement = () =>
   (frame = { dataset: {}, contentWindow: {}, addEventListener() {}, isConnected: true });
 const layer = {
   classList: classes(),
+  // Upstream a6682ecf reuses the same frame when container.querySelector finds it.
+  querySelector: () => null,
   appendChild: (node) => {
     node.parentElement = layer;
   }

@@ -7,6 +7,16 @@ globalThis.localStorage = {
   removeItem() {}
 };
 
+// Node's navigator.languages follows this machine's OS locale, and
+// Intl.DisplayNames would otherwise answer in it; these assertions expect
+// the English names the manifest carries.
+try {
+  Object.defineProperty(globalThis, "navigator", {
+    value: { languages: ["en-US"], language: "en-US" },
+    configurable: true
+  });
+} catch (_) {}
+
 const { Environment } = await import("../../../platform/environment.js");
 const { PlayerController } = await import("../../../core/player/playerController.js");
 const { createPlayerScreenMethods12 } =

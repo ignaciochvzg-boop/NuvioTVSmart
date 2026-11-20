@@ -148,15 +148,24 @@ export function customPosterForItem(
   if (!item) return item;
   // Keep every screen on the same source sizes as Home. The helpers are
   // idempotent and leave artwork from any other host byte-for-byte unchanged.
-  const normalizedItem = {
-    ...item,
-    poster: tvCardSizedPoster(normalizeTmdbPosterUrl(item.poster)),
-    backdrop: normalizeTmdbBackdropUrl(item.backdrop),
-    background: normalizeTmdbBackdropUrl(item.background),
-    landscapePoster: normalizeTmdbBackdropUrl(item.landscapePoster),
-    episodeThumbnail: normalizeTmdbBackdropUrl(item.episodeThumbnail)
-  };
-  item = normalizedItem;
+  // An item that is already at those sizes keeps its identity: no allocation
+  // per card per render, and callers can detect "nothing changed"
+  // (renderContinueWatchingCard's raw-fallback branch relies on it).
+  const sizedPoster = tvCardSizedPoster(normalizeTmdbPosterUrl(item.poster));
+  const backdrop = normalizeTmdbBackdropUrl(item.backdrop);
+  const background = normalizeTmdbBackdropUrl(item.background);
+  const landscapePoster = normalizeTmdbBackdropUrl(item.landscapePoster);
+  const episodeThumbnail = normalizeTmdbBackdropUrl(item.episodeThumbnail);
+  const sameArtwork = (next, prev) => next === prev || (!next && !prev);
+  if (
+    !sameArtwork(sizedPoster, item.poster) ||
+    !sameArtwork(backdrop, item.backdrop) ||
+    !sameArtwork(background, item.background) ||
+    !sameArtwork(landscapePoster, item.landscapePoster) ||
+    !sameArtwork(episodeThumbnail, item.episodeThumbnail)
+  ) {
+    item = { ...item, poster: sizedPoster, backdrop, background, landscapePoster, episodeThumbnail };
+  }
   const pattern = settings.customPosterUrlPattern;
   if (!item || !pattern || !settings.customPosterEnabledScreens?.includes(screen)) return item;
   const supportsShape = prepare(pattern).decoded.includes("{shape}");

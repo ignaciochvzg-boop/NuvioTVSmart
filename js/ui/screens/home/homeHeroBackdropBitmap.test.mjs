@@ -103,7 +103,10 @@ function setup(results) {
   return { swap: context.animateHeroBackdropSwap, wrap, image };
 }
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 5));
+// Wait out the full rAF -> rAF -> setTimeout(0) reveal chain. A fixed 5 ms is
+// enough on Linux/macOS, but Windows quantizes timers to the ~15.6 ms system
+// tick, which fires this settle before finalize has run.
+const settle = () => new Promise((resolve) => setTimeout(resolve, 80));
 
 test("bitmap backdrops crossfade over the previous artwork and keep the <img> as anchor", async () => {
   const bitmapB = { width: 1920, height: 1080 };
