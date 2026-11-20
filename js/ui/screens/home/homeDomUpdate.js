@@ -89,10 +89,25 @@ function updateAttributes(node, previous, next) {
   ) {
     releasePoster(node);
   }
+  // The generated hero keeps the original addon logo url, while the painted
+  // <img> carries the bounded blob url. Only the hero swap may replace it.
+  const keepHeroLogoSrc =
+    node.tagName === "IMG" &&
+    node.classList.contains("home-hero-logo") &&
+    Boolean(node.heroLogoSourceUrl) &&
+    next.getAttribute("src") === node.heroLogoSourceUrl;
+  // While the Tizen bitmap <canvas> shows this backdrop, the <img> stays as an
+  // empty hidden anchor. A refresh must not re-attach the raw full-size decode.
+  const keepHeroBackdropSrc =
+    node.tagName === "IMG" &&
+    node.classList.contains("home-hero-backdrop") &&
+    Boolean(node.heroBackdropCanvasSrc) &&
+    next.getAttribute("src") === node.heroBackdropCanvasSrc;
   const names = new Set(
     [...Array.from(previous.attributes), ...Array.from(next.attributes)].map((attr) => attr.name)
   );
   names.forEach((name) => {
+    if (name === "src" && (keepHeroLogoSrc || keepHeroBackdropSrc)) return;
     const oldValue = previous.getAttribute(name);
     const newValue = next.getAttribute(name);
     if (oldValue === newValue) return;
@@ -152,8 +167,8 @@ function releasePoster(image) {
 
 function releasePosters(node) {
   if (node.nodeType !== 1) return;
-  if (node.matches("img.content-poster")) releasePoster(node);
-  node.querySelectorAll("img.content-poster").forEach(releasePoster);
+  if (node.matches("img.content-poster, img.home-continue-bg")) releasePoster(node);
+  node.querySelectorAll("img.content-poster, img.home-continue-bg").forEach(releasePoster);
 }
 
 function updateNode(node, source, protectedNode) {
@@ -170,7 +185,30 @@ function updateNode(node, source, protectedNode) {
   sourceByNode.set(node, snapshot(source));
 }
 
+function unwrapRuntimeHeroDescriptionTrack(parent) {
+  if (!parent?.classList?.contains?.("home-hero-description")) {
+    return;
+  }
+  parent.classList.remove("hero-description-autoscroll");
+  if (parent.style) {
+    parent.style.height = "";
+    parent.style.maskImage = "";
+    parent.style.webkitMaskImage = "";
+  }
+  for (let child = parent.firstChild; child;) {
+    const next = child.nextSibling;
+    if (child.nodeType === 1 && child.classList?.contains?.("hero-description-track")) {
+      while (child.firstChild) {
+        parent.insertBefore(child.firstChild, child);
+      }
+      child.remove();
+    }
+    child = next;
+  }
+}
+
 function updateChildren(parent, source, protectedNode) {
+  unwrapRuntimeHeroDescriptionTrack(parent);
   const available = new Map();
   children(parent).forEach((node) => {
     const previous = sourceByNode.get(node);

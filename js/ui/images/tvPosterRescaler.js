@@ -20,8 +20,8 @@ import {
 //
 // Rescaling must never change what the card looks like, so it is confined to
 // the cases where that can be guaranteed: the two object-fit values the home
-// cards actually use, and JPEG sources, which cannot carry transparency or
-// animation. Everything else loads exactly as it does today.
+// cards actually use, JPEG sources, and still WebP whose header proves it is
+// not an animation. Everything else loads exactly as it does today.
 
 /** The object-fit values this module can reproduce exactly. */
 export function isRescalableArtworkFit(fit) {
@@ -54,11 +54,11 @@ export function computeSourceRect(nw, nh, bw, bh, fit) {
 }
 
 /**
- * JPEG is the only format that is safe to re-encode blind: it has no alpha
- * channel to flatten and no frames to drop. GIF, APNG and animated WebP would
- * lose their animation to createImageBitmap, which keeps only the first frame,
- * and PNG or WebP may carry transparency that a JPEG would paint black.
- * Android keeps animated decoding, so those sources load untouched here too.
+ * JPEG has no alpha channel to flatten and no frames to drop, so it is always
+ * safe to re-encode. GIF, APNG and animated WebP would lose their animation to
+ * createImageBitmap, which keeps only the first frame, and PNG may carry
+ * transparency that a JPEG would paint black. Android keeps animated decoding,
+ * so those sources load untouched here too.
  *
  * Sniffing the bytes rather than trusting Content-Type keeps the check honest
  * when an addon CDN mislabels or omits the header.
@@ -71,6 +71,59 @@ export function isJpegHeader(bytes) {
     bytes[1] === 0xd8 &&
     bytes[2] === 0xff
   );
+}
+
+/**
+ * Still WebP header facts, before any decode. Android's Coil bounds WebP like
+ * every other artwork, so a 1536x864 collection cover in a 411x233 card costs
+ * 411x233 of bitmap there; the browser decodes the whole file unless this path
+ * steps in. Only the first RIFF chunk is read: VP8X, VP8L and VP8 are the three
+ * WebP starts, and a file that does not begin with one is left untouched.
+ *
+ * An animated file is reported rather than decoded: createImageBitmap keeps
+ * one frame, and Android keeps the animation. `alpha` picks a transparent
+ * output instead of an opaque JPEG that would paint the holes black.
+ */
+export function webpArtworkInfo(bytes) {
+  if (!bytes || bytes.length < 20) return null;
+  if (bytes[0] !== 0x52 || bytes[1] !== 0x49 || bytes[2] !== 0x46 || bytes[3] !== 0x46) return null;
+  if (bytes[8] !== 0x57 || bytes[9] !== 0x45 || bytes[10] !== 0x42 || bytes[11] !== 0x50)
+    return null;
+  const chunk = String.fromCharCode(bytes[12], bytes[13], bytes[14], bytes[15]);
+  if (chunk === "VP8X") {
+    // Extended format: flags, three reserved bytes, then the 24-bit canvas size.
+    if (bytes.length < 30) return null;
+    if (bytes[20] & 0x02) return { animated: true };
+    return {
+      animated: false,
+      alpha: Boolean(bytes[20] & 0x10),
+      width: 1 + (bytes[24] | (bytes[25] << 8) | (bytes[26] << 16)),
+      height: 1 + (bytes[27] | (bytes[28] << 8) | (bytes[29] << 16))
+    };
+  }
+  if (chunk === "VP8L") {
+    // 0x2f signature, then two 14-bit sizes and the alpha hint.
+    if (bytes.length < 25 || bytes[20] !== 0x2f) return null;
+    const bits = bytes[21] | (bytes[22] << 8) | (bytes[23] << 16) | (bytes[24] << 24);
+    return {
+      animated: false,
+      alpha: Boolean((bits >>> 28) & 1),
+      width: 1 + (bits & 0x3fff),
+      height: 1 + ((bits >>> 14) & 0x3fff)
+    };
+  }
+  if (chunk === "VP8 ") {
+    // Lossy key frame: three-byte frame tag, start code, then two 14-bit sizes.
+    if (bytes.length < 30) return null;
+    if (bytes[23] !== 0x9d || bytes[24] !== 0x01 || bytes[25] !== 0x2a) return null;
+    return {
+      animated: false,
+      alpha: false,
+      width: (bytes[26] | (bytes[27] << 8)) & 0x3fff,
+      height: (bytes[28] | (bytes[29] << 8)) & 0x3fff
+    };
+  }
+  return null;
 }
 
 // The native client bounds a compressed artwork body to 8 MiB; a huge addon
@@ -129,6 +182,7 @@ export function artworkResizeTarget(width, height, maxDimension = 1280) {
 const WORKER_SOURCE = `
 const sourceRect = ${computeSourceRect.toString()};
 const isJpeg = ${isJpegHeader.toString()};
+const webpInfo = ${webpArtworkInfo.toString()};
 const isTooLarge = ${isArtworkTooLarge.toString()};
 const jpegSize = ${jpegDimensions.toString()};
 const resizeTarget = ${artworkResizeTarget.toString()};
@@ -153,11 +207,17 @@ self.onmessage = async (event) => {
       throw new Error("too large");
     }
     const view = new Uint8Array(bytes);
-    if (!isJpeg(view)) {
+    const jpeg = isJpeg(view);
+    const webp = jpeg ? null : webpInfo(view);
+    if (!jpeg && !webp) {
       // Could carry transparency or animation. Leave it to the <img> tag.
       throw new Error("not jpeg");
     }
-    const dimensions = jpegSize(view);
+    if (webp && webp.animated) {
+      // One frame would survive the canvas; the <img> tag plays the animation.
+      throw new Error("animated webp");
+    }
+    const dimensions = jpeg ? jpegSize(view) : webp;
     const resize = dimensions ? resizeTarget(dimensions.width, dimensions.height, 1280) : null;
     full = await createImageBitmap(
       new Blob([bytes]),
@@ -167,10 +227,15 @@ self.onmessage = async (event) => {
       // Already no larger than the card. Re-encoding would only lose quality.
       throw new Error("already small");
     }
+    const alpha = Boolean(webp && webp.alpha);
     const crop = sourceRect(full.width, full.height, width, height, fit);
     const canvas = new OffscreenCanvas(width, height);
-    canvas.getContext("2d", { alpha: false }).drawImage(full, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, width, height);
-    const out = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.82 });
+    canvas.getContext("2d", { alpha }).drawImage(full, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, width, height);
+    const out = await canvas.convertToBlob(
+      alpha
+        ? { type: "image/webp", quality: 0.85 }
+        : { type: "image/jpeg", quality: 0.82 }
+    );
     full.close();
     full = null;
     self.postMessage({ id, ok: true, blob: out });
@@ -267,7 +332,9 @@ function createPool() {
     cache: new Map(),
     failed: new Map(),
     inflight: new Map(),
-    disposed: false
+    disposed: false,
+    suspended: false,
+    suspendRequested: false
   };
   const count = workerCount();
   for (let index = 0; index < count; index += 1) {
@@ -343,6 +410,9 @@ function retireWorker(state, worker, reason) {
 }
 
 function pump(state) {
+  if (state.suspended && state.queue.length) {
+    resumeWorkers(state);
+  }
   while (!state.disposed && state.idle.length && state.queue.length) {
     // Highest priority first, newest first within a priority: after a long
     // scroll the latest requests are the cards on screen, while the rows passed
@@ -372,12 +442,73 @@ function pump(state) {
       fit: job.fit
     });
   }
+  if (state.suspendRequested && !state.queue.length && !state.jobs.size) {
+    suspendWorkers(state);
+  }
+}
+
+/**
+ * Stop every pool thread until the next rescale needs one. The viewer is in
+ * playback: the TV is about to allocate its video buffer and idle JS isolates
+ * only compete for it.
+ *
+ * Only the compressed blobs nothing paints are reclaimed here. The urls the
+ * retained Home DOM still shows have to survive, so a job still running is
+ * allowed to finish instead of being cut off mid-decode.
+ */
+function suspendWorkers(state) {
+  if (!state || state.disposed) {
+    return;
+  }
+  state.suspendRequested = false;
+  state.workers.splice(0).forEach((worker) => {
+    try {
+      worker.terminate();
+    } catch (_) {}
+  });
+  state.idle.length = 0;
+  state.suspended = true;
+  state.cache.forEach((entry, key) => {
+    if (entry.uses > 0) {
+      return;
+    }
+    URL.revokeObjectURL(entry.objectUrl);
+    state.cache.delete(key);
+  });
+}
+
+function suspendPool(state) {
+  if (!state || state.disposed) {
+    return;
+  }
+  if (state.queue.length || state.jobs.size) {
+    // A poster is being re-encoded right now. Cut it only once the answer is
+    // in, or the card would keep the oversized original instead.
+    state.suspendRequested = true;
+    return;
+  }
+  suspendWorkers(state);
+}
+
+function resumeWorkers(state) {
+  const count = workerCount();
+  while (state.workers.length < count) {
+    if (!spawnWorker(state)) {
+      break;
+    }
+  }
+  state.suspended = state.workers.length === 0;
+  if (!state.workers.length) {
+    // Nothing can run, so hand the queue back and let every caller fall back
+    // to loading the original url, exactly as an unusable pool does.
+    state.queue.splice(0).forEach((job) => job.settle(null, "no workers"));
+  }
 }
 
 // Artwork 404s are deliberately left out: the native client excludes art from
 // its negative cache because a CDN 404 can be transient. Only answers that
 // depend on the bytes themselves are permanent for the session.
-const DETERMINISTIC_ARTWORK_FAILURE = /^(not jpeg|already small|too large)$/;
+const DETERMINISTIC_ARTWORK_FAILURE = /^(not jpeg|already small|too large|animated webp)$/;
 const ARTWORK_FAILURE_LIMIT = 512;
 
 function rememberArtworkFailure(state, key, reason) {
@@ -446,9 +577,9 @@ function rescaleWithPool(state, url, { width, height, fit, priority = 2, isStale
   // The fit belongs in the key: the same artwork in the same box is cropped
   // for one card type and stretched for another.
   const key = `${url}|${width}x${height}|${fit}`;
-  // These answers cannot change for the same url and target: a non-JPEG source
-  // stays non-JPEG and a source already smaller than the box stays smaller.
-  // Retrying them on every scroll only spends a worker fetch to learn it again.
+  // These answers cannot change for the same url and target: an unsupported or
+  // animated source stays that way, and a source already smaller than the box
+  // stays smaller. Retrying them on every scroll only spends a worker fetch.
   if (state.failed.has(key)) {
     return Promise.resolve(null);
   }
@@ -513,17 +644,18 @@ function rescaleWithPool(state, url, { width, height, fit, priority = 2, isStale
   return job.promise;
 }
 
-// The worker only rescales JPEG, so a source that is plainly something else
-// would cost a full fetch and a worker slot just to learn "not jpeg" while the
-// card waits. The extension check ignores the query and fragment.
-const NON_JPEG_PATH_RE = /\.(?:gifv?|webp|png|svg|avif)$/i;
+// The worker only rescales JPEG and still WebP, so a source that is plainly
+// something else would cost a full fetch and a worker slot just to learn "not
+// jpeg" while the card waits. The extension check ignores the query and
+// fragment. WebP is not on this list: its header decides still vs animated.
+const NON_RESCALABLE_PATH_RE = /\.(?:gifv?|png|svg|avif)$/i;
 const DATA_URL_RE = /^data:/i;
 const JPEG_DATA_URL_RE = /^data:image\/jpe?g[;,]/i;
 
-function isObviousNonJpegUrl(url) {
+function isObviousNonRescalableUrl(url) {
   const value = String(url);
   if (DATA_URL_RE.test(value)) return !JPEG_DATA_URL_RE.test(value);
-  return NON_JPEG_PATH_RE.test(value.split(/[?#]/, 1)[0]);
+  return NON_RESCALABLE_PATH_RE.test(value.split(/[?#]/, 1)[0]);
 }
 
 /**
@@ -532,7 +664,7 @@ function isObviousNonJpegUrl(url) {
  */
 export function shouldQueueRescale(url, { width, height, fit } = {}) {
   return Boolean(
-    url && width > 0 && height > 0 && isRescalableArtworkFit(fit) && !isObviousNonJpegUrl(url)
+    url && width > 0 && height > 0 && isRescalableArtworkFit(fit) && !isObviousNonRescalableUrl(url)
   );
 }
 
@@ -617,6 +749,21 @@ export function resetHomeArtworkRescaler() {
   const state = pool;
   pool = null;
   resetPool(state);
+}
+
+/**
+ * Stop the Home pool's threads for the duration of playback. Android enters the
+ * player with nothing but its decoder alive; here the retained Home DOM keeps
+ * the rescaler workers parked next to the video buffer. Painted urls survive,
+ * and the next rescale spawns a worker again on its own.
+ */
+export function suspendIdleHomeArtworkWorkers() {
+  suspendPool(pool);
+}
+
+/** Same as suspendIdleHomeArtworkWorkers for the non-Home pool. */
+export function suspendIdleArtworkWorkers() {
+  suspendPool(genericPool);
 }
 
 /** Drop the non-Home pool and its cached urls. */

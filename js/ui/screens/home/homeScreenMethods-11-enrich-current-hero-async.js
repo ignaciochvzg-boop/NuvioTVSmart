@@ -1,5 +1,13 @@
 import { MdbListSettingsStore } from "../../../data/local/mdbListSettingsStore.js";
+import { releaseHomeArtwork, rescaleHomeArtwork, shouldQueueRescale, shouldRescaleHomeArtwork } from "../../images/tvPosterRescaler.js";
+import { getTvArtworkPixelRatio } from "../../../platform/tvRuntimePerformance.js";
 import * as internals from "./homeScreenContext.js";
+
+// The focused overlay is hydrated from several paths (focus change, poster
+// flow, route restore), and each one would start its own request. One entry per
+// <img> keeps the rescaled url's reference count matched to the single element
+// painting it.
+const focusGifRequests = new WeakMap();
 
 export function createHomeScreenMethods11() {
   const {
@@ -11,7 +19,7 @@ export function createHomeScreenMethods11() {
     firstNonEmpty,
     resolveImdbRating,
     preloadHeroBackdrop,
-    preloadImageSource,
+    preloadHeroLogo,
     parseRuntimeMinutes,
     normalizeCollectionFolderItem,
     withTimeout,
@@ -46,13 +54,22 @@ export function createHomeScreenMethods11() {
         const focusedHero = this.getNodeHeroSource(this.getCurrentFocusedNode());
         return buildHeroIdentity(focusedHero) === heroIdentity;
       };
-      const commitHero = async (resolvedHero, { merge = false } = {}) => {
-        if (deferCommit) {
+      let settledMdbImdbRating = null;
+      let mdbImdbRatingSettled = false;
+      let heroCommitStarted = false;
+      const commitHero = async (resolvedHero, { merge = false, skipPreload = false } = {}) => {
+        if (deferCommit && !skipPreload) {
           const display = buildModernHeroPresentation(resolvedHero);
-          await Promise.all([preloadHeroBackdrop(display?.backdrop), preloadImageSource(display?.logo)]);
+          await Promise.all([preloadHeroBackdrop(display?.backdrop), preloadHeroLogo(display?.logo)]);
         }
         if (!canCommitHero()) {
           return false;
+        }
+        // A rating that settled while the media preload was running is newer
+        // than the hero assembled by the caller.
+        if (mdbImdbRatingSettled && settledMdbImdbRating != null) {
+          resolvedHero = { ...resolvedHero, imdbRating: settledMdbImdbRating };
+          merge = true;
         }
         this.heroItem = resolvedHero;
         const matchedIndex = (this.heroCandidates || []).findIndex((item) => String(item?.id || "") === itemId);
@@ -72,6 +89,23 @@ export function createHomeScreenMethods11() {
         3500,
         null
       ).catch(() => null);
+      // A slow rating request must not hold the artwork/meta commit: the hero
+      // paints as soon as TMDB/addon metadata resolves, and the rating is
+      // patched in afterwards without re-preloading media already on screen.
+      void mdbImdbRatingPromise
+        .then((rating) => {
+          settledMdbImdbRating = rating == null ? null : Number(rating);
+          mdbImdbRatingSettled = true;
+          if (settledMdbImdbRating == null || !heroCommitStarted || !canCommitHero()) {
+            return null;
+          }
+          const currentHero = this.heroItem;
+          if (String(currentHero?.id || "") !== itemId || Number(currentHero.imdbRating) === settledMdbImdbRating) {
+            return null;
+          }
+          return commitHero({ ...currentHero, imdbRating: settledMdbImdbRating }, { merge: true, skipPreload: true });
+        })
+        .catch(() => {});
       let metadataPromise = null;
       let latestMetadataResult = null;
       let latestTmdbEnrichment = null;
@@ -79,10 +113,8 @@ export function createHomeScreenMethods11() {
         if (!canCommitHero()) {
           return false;
         }
-        const mdbImdbRating = await mdbImdbRatingPromise;
-        if (!canCommitHero()) {
-          return false;
-        }
+        heroCommitStarted = true;
+        const mdbImdbRating = mdbImdbRatingSettled ? settledMdbImdbRating : null;
         const fallbackHero = {
           ...(deferCommit ? hero : this.heroItem),
           heroMetaEnriched: false,
@@ -97,11 +129,9 @@ export function createHomeScreenMethods11() {
         if ((!meta && !tmdbEnrichment) || !canCommitHero()) {
           return false;
         }
+        heroCommitStarted = true;
         const enrichedImdb = meta ? resolveImdbRating(meta) : null;
-        const mdbImdbRating = await mdbImdbRatingPromise;
-        if (!canCommitHero()) {
-          return false;
-        }
+        const mdbImdbRating = mdbImdbRatingSettled ? settledMdbImdbRating : null;
         const settings = TmdbSettingsStore.get();
         const sourceHero =
           (late || tmdbEnrichment) && String(this.heroItem?.id || "") === itemId ? this.heroItem : deferCommit ? hero : this.heroItem;
@@ -271,17 +301,69 @@ export function createHomeScreenMethods11() {
       }
       if (active) {
         const src = String(gifNode.dataset.src || gifNode.getAttribute("src") || "").trim();
-        if (src && !gifNode.getAttribute("src")) {
-          gifNode.setAttribute("src", src);
+        if (!src || gifNode.getAttribute("src")) {
+          return;
         }
-        node.classList.add("is-focus-gif-active");
+        const pending = focusGifRequests.get(gifNode);
+        if (pending?.src === src) {
+          return;
+        }
+        // Android fades the overlay in once the bounded decode succeeds
+        // (`gifAlpha` on Coil `onSuccess`), so the class that starts the CSS
+        // fade goes on with the source that finally paints it.
+        const paint = (value) => {
+          gifNode.setAttribute("src", value);
+          node.classList.add("is-focus-gif-active");
+        };
+        // Android bounds every focus overlay decode to the card pixels
+        // (Coil `.size(requestWidthPx, requestHeightPx)`). An <img> always
+        // decodes at natural size, so a static high-resolution overlay costs
+        // the full bitmap even when the card paints a few hundred pixels.
+        // Animated assets are refused by the rescaler and paint immediately.
+        if (shouldRescaleHomeArtwork()) {
+          // `.home-collection-card .home-poster-focus-gif` is object-fit: fill
+          // in every layout, so the card box is exactly what Android decodes.
+          const rect = gifNode.getBoundingClientRect();
+          const ratio = getTvArtworkPixelRatio();
+          const width = Math.round(rect.width * ratio);
+          const height = Math.round(rect.height * ratio);
+          if (shouldQueueRescale(src, { width, height, fit: "fill" })) {
+            const request = { src };
+            const isStale = () => !gifNode.isConnected || gifNode.dataset.src !== src || !node.classList.contains("focused");
+            focusGifRequests.set(gifNode, request);
+            rescaleHomeArtwork(src, { width, height, fit: "fill", priority: 0, isStale }).then((objectUrl) => {
+              if (focusGifRequests.get(gifNode) === request) {
+                focusGifRequests.delete(gifNode);
+              }
+              // The card blurred while the worker ran: hand the url back
+              // instead of decoding it into an overlay nobody sees.
+              if (!objectUrl) {
+                if (!isStale()) {
+                  paint(src);
+                }
+                return;
+              }
+              if (isStale()) {
+                releaseHomeArtwork(objectUrl);
+                return;
+              }
+              paint(objectUrl);
+            });
+            return;
+          }
+        }
+        paint(src);
         return;
       }
       node.classList.remove("is-focus-gif-active");
       // Match Android's focused-only GIF lifecycle: hiding the overlay is not
       // enough on TV browsers because an <img> with src keeps decoding/animating.
       // Preserve data-src so the asset can be loaded again on the next focus.
+      const painted = String(gifNode.getAttribute("src") || "");
       gifNode.removeAttribute("src");
+      // A rescaled overlay paints a pooled blob url; keep its reference counted
+      // so the pool can reclaim the slot. Original urls are a no-op.
+      releaseHomeArtwork(painted);
     },
     syncFocusedCollectionCardState() {
       const focused = this.getCurrentFocusedNode();

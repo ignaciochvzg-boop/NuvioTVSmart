@@ -259,7 +259,7 @@ function insertInsetFallbacks(decl) {
   }
 }
 
-function legacyDeclarationFallbackPlugin() {
+function legacyDeclarationFallbackPlugin(seenSupportsRootBlocks = new Set()) {
   const guardedDeclarations = new WeakSet();
   const lastGuardByRule = new WeakMap();
   return {
@@ -274,6 +274,16 @@ function legacyDeclarationFallbackPlugin() {
         // substitution then invalidates the consuming property, so duplicate
         // declarations alone cannot provide a legacy fallback.
         if (decl.prop.startsWith("--") && /\b(min|max|clamp)\(/.test(decl.value)) {
+          // postcss-global-data injects base.css :root into every processed file,
+          // so an identical :root guard would otherwise be emitted for each one.
+          if (decl.parent.selector === ":root") {
+            const guardKey = `${decl.prop}|${decl.value}`;
+            if (seenSupportsRootBlocks.has(guardKey)) {
+              decl.value = legacyValue;
+              return;
+            }
+            seenSupportsRootBlocks.add(guardKey);
+          }
           const modernDecl = decl.clone();
           guardedDeclarations.add(modernDecl);
           const modernRule = decl.parent.clone({ nodes: [modernDecl] });
@@ -367,7 +377,11 @@ function flexGapFallbackPlugin() {
           if (value.includes("column")) {
             flexDirection = "column";
           }
-          if (value.includes("wrap")) {
+          // `nowrap` also contains `wrap`; check it first so row-nowrap rules
+          // do not inherit the wrap fallback margins.
+          if (value.includes("nowrap")) {
+            flexWrap = "nowrap";
+          } else if (value.includes("wrap")) {
             flexWrap = "wrap";
           }
           return;
@@ -397,7 +411,11 @@ function flexGapFallbackPlugin() {
       rowGap ||= "0";
       columnGap ||= "0";
 
-      const scopedSelectors = rule.selectors.map((selector) => `html.no-flex-gap ${selector}`);
+      const scopedSelectors = rule.selectors.map((selector) =>
+        /^html(?=[.#[:\s]|$)/i.test(selector)
+          ? selector.replace(/^html\b/i, "html.no-flex-gap")
+          : `html.no-flex-gap ${selector}`
+      );
       const isColumnDirection = flexDirection.includes("column");
       const wraps = flexWrap.includes("wrap") && !flexWrap.includes("nowrap");
       const childFallback = postcss.rule({
@@ -451,6 +469,7 @@ async function buildCSS() {
 
   const remoteImports = [];
   const seenRemoteImports = new Set();
+  const seenSupportsRootBlocks = new Set();
   const bodies = [];
 
   const remoteImportPattern =
@@ -479,7 +498,7 @@ async function buildCSS() {
           overrideBrowserslist: [`Chrome ${compatibilityPolicy.chromiumVersion}`],
           grid: "autoplace"
         }),
-        legacyDeclarationFallbackPlugin(),
+        legacyDeclarationFallbackPlugin(seenSupportsRootBlocks),
         unsupportedSelectorFallbackPlugin(),
         flexGapFallbackPlugin(),
         cssnano()

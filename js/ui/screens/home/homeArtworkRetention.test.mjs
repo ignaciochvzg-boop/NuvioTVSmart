@@ -18,7 +18,7 @@ function buildScreen({
   hasLoadedOnce = true,
   childNodes = 1
 } = {}) {
-  const calls = { released: 0, reset: 0, hidden: 0, position: "", classes: [] };
+  const calls = { released: 0, reset: 0, resetLogo: 0, hidden: 0, position: "", classes: [] };
   const classList = {
     add(token) {
       calls.classes.push(`add:${token}`);
@@ -64,6 +64,9 @@ function buildScreen({
     },
     resetHomeArtworkRescaler() {
       calls.reset += 1;
+    },
+    resetHeroLogoRescaleCache() {
+      calls.resetLogo += 1;
     }
   });
   context.globalThis = context;
@@ -120,6 +123,7 @@ test("a retained TV Home keeps its artwork and rescale pool on cleanup", () => {
   );
   assert.equal(calls.released, 0, "the posters still in the retained DOM must not be stripped");
   assert.equal(calls.reset, 0, "the blob urls the retained cards paint must stay valid");
+  assert.equal(calls.resetLogo, 0, "the retained hero logo keeps its blob url");
   assert.equal(calls.hidden, 0, "a preserved Home is not emptied");
   assert.equal(screen.homeArtworkReleaseTimer, undefined, "no deferred release is scheduled");
 });
@@ -130,6 +134,7 @@ test("a discarded Home hands the artwork back before its pool is torn down", () 
   assert.equal(screen.homeDomPreserved, false);
   assert.equal(calls.released, 1, "painted urls go back before the pool is reset");
   assert.equal(calls.reset, 1, "workers and blob urls are dropped with the DOM");
+  assert.equal(calls.resetLogo, 1, "cached hero logo blobs are dropped with the DOM");
   assert.equal(calls.hidden, 1, "the screen is hidden and emptied");
 });
 
@@ -139,5 +144,56 @@ test("a browser Home still releases its artwork without the TV retained layer", 
   assert.equal(screen.homeDomPreserved, false);
   assert.equal(calls.released, 1);
   assert.equal(calls.reset, 1);
+  assert.equal(calls.resetLogo, 1);
   assert.equal(calls.hidden, 1);
+});
+
+test("sign-out discards preserved TV Home DOM, releases artwork, and resets user state", () => {
+  const { screen, calls } = buildScreen({ platform: "tizen" });
+  let clearedStoredFocus = 0;
+  screen.heroCandidates = [{ id: "hero-1" }];
+  screen.heroItem = { id: "hero-1" };
+  screen.continueWatchingItems = [{ id: "cw-1" }];
+  screen.sidebarProfile = { name: "User" };
+  screen.savedFocusStates = { modern: { track: 1 } };
+  screen.loadedProfileId = "profile-1";
+  screen.loadedWatchProgressSourceKey = "trakt";
+  screen.loadedHomeRouteInputSignature = "sig-1";
+  screen.renderedMarkup = "<section>Home</section>";
+  screen.clearStoredReturnFocusState = () => {
+    clearedStoredFocus += 1;
+  };
+
+  screen.cleanup();
+  assert.equal(screen.homeDomPreserved, true);
+
+  screen.resetForSignOut();
+
+  assert.equal(screen.homeDomPreserved, false);
+  assert.ok(calls.classes.includes("remove:home-dom-preserved"));
+  assert.equal(screen.container.innerHTML, "");
+  assert.equal(calls.released, 1);
+  assert.equal(calls.reset, 1);
+  assert.equal(calls.hidden, 1);
+  assert.equal(clearedStoredFocus, 1);
+  assert.equal(screen.hasLoadedOnce, false);
+  assert.deepEqual(Array.from(screen.rows), []);
+  assert.deepEqual(Array.from(screen.heroCandidates), []);
+  assert.equal(screen.heroItem, null);
+  assert.deepEqual(Array.from(screen.continueWatchingItems), []);
+  assert.equal(screen.sidebarProfile, null);
+  assert.deepEqual(Object.keys(screen.savedFocusStates), []);
+  assert.equal(screen.loadedProfileId, "");
+  assert.equal(screen.loadedWatchProgressSourceKey, "");
+  assert.equal(screen.loadedHomeRouteInputSignature, "");
+  assert.equal(screen.renderedMarkup, null);
+});
+
+test("AuthState.SIGNED_OUT invokes HomeScreen resetForSignOut in js/app.js", async () => {
+  const appSource = await readFile(new URL("../../../app.js", import.meta.url), "utf8");
+  const signedOutMatch = appSource.match(
+    /if\s*\(\s*state\s*===\s*AuthState\.SIGNED_OUT\s*\)\s*\{([\s\S]*?)\n\s{4}\}/
+  );
+  assert.ok(signedOutMatch, "AuthState.SIGNED_OUT handler must exist in js/app.js");
+  assert.match(signedOutMatch[1], /Router\.routes\?\.\s*home\?\.\s*resetForSignOut\?\.\(\)/);
 });
